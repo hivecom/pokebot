@@ -3,26 +3,35 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use anyhow::Context;
-use structopt::clap::AppSettings;
+use diesel::Connection;
+use diesel::connection::Instrumentation;
+use diesel_async::pooled_connection::{AsyncDieselConnectionManager, ManagerConfig, deadpool};
+use diesel_async::sync_connection_wrapper::SyncConnectionWrapper;
+use diesel_async::{AsyncMigrationHarness, RunQueryDsl};
+use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use structopt::StructOpt;
+use structopt::clap::AppSettings;
 #[cfg(unix)]
 use tokio::signal::unix::*;
 use tokio::sync::oneshot;
 use tracing::level_filters::LevelFilter;
+use tracing::{Level, span, trace};
 use tracing::{debug, error, info};
-use tracing::{span, Level};
 use tracing_subscriber::EnvFilter;
 use tsclientlib::Identity;
 
 mod audio_player;
 mod bot;
 mod command;
+mod db_util;
 mod playlist;
+mod schema;
+mod sqlite_mapping;
 mod teamspeak;
 mod web_server;
 mod youtube_dl;
 
-use bot::{MasterArgs, MasterBot, MusicBot, MusicBotArgs, Quit};
+use bot::{MasterArgs, MasterBot, Quit};
 
 #[derive(StructOpt, Debug)]
 #[structopt(global_settings = &[AppSettings::ColoredHelp])]
@@ -71,6 +80,8 @@ pub struct Args {
 
 #[tokio::main]
 async fn main() {
+    dotenv::dotenv().ok();
+
     let filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
         .from_env_lossy();
@@ -104,10 +115,10 @@ async fn run() -> Result<(), anyhow::Error> {
 
     let mut config: MasterArgs = toml::from_str(&toml)?;
 
-    if let Some(music_root) = &config.music_root {
-        if !music_root.is_dir() {
-            anyhow::bail!("music_root is not a directory");
-        }
+    if let Some(music_root) = &config.music_root
+        && !music_root.is_dir()
+    {
+        anyhow::bail!("music_root is not a directory");
     }
 
     if config.id.is_none() {
@@ -157,79 +168,63 @@ async fn run() -> Result<(), anyhow::Error> {
         return Ok(());
     }
 
-    let local = args.local;
     let bot_args = config.merge(args);
 
     info!("Starting PokeBot!");
     debug!(args = ?std::env::args(), "Received CLI arguments");
 
-    if local {
-        let name = bot_args.names[0].clone();
-        let identity = bot_args.ids.expect("identies should exists")[0].clone();
+    let bot_name = bot_args.master_name.clone();
+    let webserver_enable = bot_args.webserver_enable;
+    let bind_address = bot_args.bind_address.clone();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
-        let bot_args = MusicBotArgs {
-            name,
-            music_root: bot_args.music_root,
-            master: None,
-            local: true,
-            address: bot_args.address.clone(),
-            identity,
-            channel: String::from("local"),
-            verbose: bot_args.verbose,
-            volume: bot_args.volume,
-            span: span!(Level::ERROR, ""),
-        };
-        MusicBot::spawn(bot_args).await;
+    let db_path = std::env::var("DATABASE_URL").unwrap();
+    let db_pool = setup_database(&db_path).await.unwrap();
 
-        ctrl_c.await??;
-    } else {
-        let webserver_enable = bot_args.webserver_enable;
-        let bind_address = bot_args.bind_address.clone();
-        let bot_name = bot_args.master_name.clone();
-        let bot =
-            MasterBot::spawn(bot_args, span!(Level::ERROR, "", master = bot_name.clone())).await;
+    let bot = MasterBot::spawn(
+        bot_args,
+        db_pool.clone(),
+        span!(Level::ERROR, "", master = bot_name.clone()),
+    )
+    .await;
 
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
-
-        if webserver_enable {
-            let web_args = web_server::WebServerArgs {
-                bind_address,
-                bot: bot.downgrade(),
-            };
-            tokio::spawn(async move {
-                if let Err(error) = web_server::start(&web_root, web_args, shutdown_rx).await {
-                    error!(%error, "Error in web server");
-                }
-            });
-        }
-
-        #[cfg(unix)]
-        tokio::select! {
-            res = ctrl_c => {
-                res??;
-                info!(signal = "SIGINT", "Received signal, shutting down");
+    if webserver_enable {
+        let bot = bot.downgrade();
+        tokio::spawn(async move {
+            if let Err(error) =
+                web_server::start(&web_root, bind_address, bot, db_pool, shutdown_rx).await
+            {
+                error!(%error, "Error in web server");
             }
-            _ = sigterm => {
-                info!(signal = "SIGTERM", "Received signal, shutting down");
-            }
-            _ = sighup => {
-                info!(signal = "SIGHUP", "Received signal, shutting down");
-            }
-            _ = sigquit => {
-                info!(signal = "SIGQUIT", "Received signal, shutting down");
-            }
-        };
-
-        #[cfg(windows)]
-        ctrl_c.await??;
-
-        shutdown_tx.send(()).unwrap();
-
-        bot.send(Quit(String::from("Stopping")))
-            .await
-            .unwrap()
-            .unwrap();
+        });
     }
+
+    #[cfg(unix)]
+    tokio::select! {
+        res = ctrl_c => {
+            res??;
+            info!(signal = "SIGINT", "Received signal, shutting down");
+        }
+        _ = sigterm => {
+            info!(signal = "SIGTERM", "Received signal, shutting down");
+        }
+        _ = sighup => {
+            info!(signal = "SIGHUP", "Received signal, shutting down");
+        }
+        _ = sigquit => {
+            info!(signal = "SIGQUIT", "Received signal, shutting down");
+        }
+    };
+
+    #[cfg(windows)]
+    ctrl_c.await??;
+
+    shutdown_tx.send(()).unwrap();
+
+    bot.send(Quit(String::from("Stopping")))
+        .await
+        .unwrap()
+        .unwrap();
 
     Ok(())
 }
@@ -250,4 +245,46 @@ pub async fn hangup() -> std::io::Result<()> {
 pub async fn quit() -> std::io::Result<()> {
     signal(SignalKind::quit())?.recv().await;
     Ok(())
+}
+
+pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
+
+type SqliteAsyncConn = SyncConnectionWrapper<diesel::SqliteConnection>;
+type SqlitePool = deadpool::Pool<SqliteAsyncConn>;
+type SqliteConn = deadpool::Object<SqliteAsyncConn>;
+
+pub async fn setup_database(database_url: &str) -> anyhow::Result<SqlitePool> {
+    let mut config = ManagerConfig::<SqliteAsyncConn>::default();
+
+    config.custom_setup = Box::new(|url| {
+        Box::pin(async move {
+            let mut sync_conn = diesel::SqliteConnection::establish(url)?;
+            let mut conn = SyncConnectionWrapper::new(sync_conn);
+
+            diesel::sql_query("PRAGMA foreign_keys = ON")
+                .execute(&mut conn)
+                .await
+                .map_err(|e| diesel::result::ConnectionError::BadConnection(e.to_string()))?;
+
+            diesel::sql_query("PRAGMA busy_timeout = 1000")
+                .execute(&mut conn)
+                .await
+                .map_err(|e| diesel::result::ConnectionError::BadConnection(e.to_string()))?;
+
+            Ok(conn)
+        })
+    });
+
+    let manager =
+        AsyncDieselConnectionManager::<SqliteAsyncConn>::new_with_config(database_url, config);
+
+    let pool = deadpool::Pool::builder(manager).build()?;
+    let connection = pool.get().await.expect("can connect to sqlite");
+
+    let mut harness = AsyncMigrationHarness::new(connection);
+    harness
+        .run_pending_migrations(MIGRATIONS)
+        .expect("migrations should be tested to work without error");
+
+    Ok(pool)
 }

@@ -1,14 +1,15 @@
 use futures::stream::StreamExt;
+use tsclientlib::data::Client;
 use xtra::{Actor, Handler, WeakAddress};
 
 use tsclientlib::data::exts::{M2BClientEditExt, M2BClientUpdateExt};
 use tsclientlib::{
+    ChannelId, ClientId, ConnectOptions, DisconnectOptions, MessageTarget, OutCommandExt, Reason,
     events::Event,
     sync::{SyncConnection, SyncConnectionHandle, SyncStreamItem},
-    ChannelId, ClientId, ConnectOptions, DisconnectOptions, MessageTarget, OutCommandExt, Reason,
 };
 
-use tracing::{debug, error, info, trace, warn, Span};
+use tracing::{Span, debug, error, info, trace, warn};
 
 use crate::bot::{ChatMessage, MusicBotMessage};
 
@@ -206,6 +207,24 @@ impl TeamSpeakConnection {
         Ok(id)
     }
 
+    pub async fn user_by_uid(&mut self, uid: String) -> anyhow::Result<Option<Client>> {
+        let id = self
+            .handle
+            .as_mut()
+            .expect("connect_for_bot was called")
+            .with_connection(move |conn| {
+                for client in conn.get_state().expect("can get state").clients.values() {
+                    if client.uid.as_ref().map(|uid| uid.to_string()).as_ref() == Some(&uid) {
+                        return Some(client.clone());
+                    }
+                }
+                None
+            })
+            .await?;
+
+        Ok(id)
+    }
+
     pub async fn channel_path_of_user(&mut self, id: ClientId) -> anyhow::Result<Option<String>> {
         let path = self
             .handle
@@ -361,11 +380,9 @@ impl TeamSpeakConnection {
         let opt = DisconnectOptions::new()
             .reason(Reason::Clientdisconnect)
             .message(reason);
-        self.handle
-            .as_mut()
-            .expect("connect_for_bot was called")
-            .disconnect(opt)
-            .await?;
+        if let Some(handle) = self.handle.as_mut() {
+            handle.disconnect(opt).await?;
+        }
 
         Ok(())
     }

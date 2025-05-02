@@ -9,6 +9,7 @@
   lib,
   rustPlatform,
   yt-dlp,
+  sqlite,
 }:
 rustPlatform.buildRustPackage {
   pname = "pokebot";
@@ -27,6 +28,7 @@ rustPlatform.buildRustPackage {
       glib
       openssl
       libopus
+      sqlite
     ]
     ++ (with gst_all_1; [
       gstreamer

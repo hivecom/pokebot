@@ -24,17 +24,17 @@ impl Display for BbCode<'_> {
 }
 
 #[allow(dead_code)]
-pub fn bold(text: &dyn Display) -> BbCode {
+pub fn bold(text: &dyn Display) -> BbCode<'_> {
     BbCode::Bold(text)
 }
 
 #[allow(dead_code)]
-pub fn italic(text: &dyn Display) -> BbCode {
+pub fn italic(text: &dyn Display) -> BbCode<'_> {
     BbCode::Italic(text)
 }
 
 #[allow(dead_code)]
-pub fn underline(text: &dyn Display) -> BbCode {
+pub fn underline(text: &dyn Display) -> BbCode<'_> {
     BbCode::Underline(text)
 }
 

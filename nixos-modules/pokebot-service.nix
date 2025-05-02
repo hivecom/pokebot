@@ -209,7 +209,7 @@ in {
       virtualHosts.${cfg.webserver.nginx.virtualHost.serverName} = lib.mkMerge [
         cfg.webserver.nginx.virtualHost
         {
-          locations."/" = {
+          locations."~ /(api|swagger)/" = {
             proxyPass = "http://${cfg.webserver.bindAddress}";
             recommendedProxySettings = true;
           };

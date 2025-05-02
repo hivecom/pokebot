@@ -1,0 +1,282 @@
+use std::cmp::Ordering;
+use std::time::Duration;
+
+use anyhow::Context;
+use axum::extract::Path;
+use axum::extract::rejection::JsonRejection;
+use axum::{Extension, Json};
+use diesel::prelude::{Insertable, Queryable};
+use diesel::{ExpressionMethods, NullableExpressionMethods, OptionalExtension, QueryDsl};
+use diesel_async::scoped_futures::ScopedFutureExt;
+use diesel_async::{AsyncConnection, RunQueryDsl};
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+use utoipa::ToSchema;
+
+use crate::db_util::unix_timestamp;
+use crate::schema::{albums, artists, songs};
+use crate::web_server::api::Error;
+use crate::web_server::api::album::{AlbumFilter, get_or_insert_album};
+use crate::web_server::login::{TsToken, uid_by_token};
+use crate::{SqliteConn, SqlitePool};
+
+/// The definition of a song.
+#[derive(Debug, Serialize, TS, ToSchema, Queryable, Eq)]
+#[ts(export, export_to = "../web_server-types/")]
+pub struct Song {
+    #[schema(example = 1)]
+    #[ts(type = "number")]
+    pub id: i64,
+
+    /// The id of the song within the album
+    #[schema(example = 1)]
+    #[ts(type = "number | null")]
+    pub track: Option<i64>,
+
+    /// The name of the song
+    #[schema(example = "Song name")]
+    pub title: String,
+
+    /// The creator of the song
+    #[schema(example = "Artist")]
+    pub artist: String,
+
+    /// The creator of the song
+    #[schema(example = "Album")]
+    pub album: Option<String>,
+
+    #[schema(example = 1)]
+    #[ts(type = "number")]
+    pub file_id: i64,
+
+    /// A unix timestamp of when this song was added
+    #[schema(example = 1670802822)]
+    #[ts(type = "number")]
+    pub created_at: i64,
+}
+
+impl PartialEq for Song {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl PartialOrd for Song {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Song {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.track.cmp(&other.track)
+    }
+}
+
+pub async fn songs(conn: &mut SqliteConn, album_filter: AlbumFilter) -> Result<Vec<Song>, Error> {
+    let mut query = songs::table
+        .inner_join(artists::table)
+        .left_join(albums::table)
+        .into_boxed();
+    match album_filter {
+        AlbumFilter::Id(album_id) => query = query.filter(albums::id.eq(album_id)),
+        AlbumFilter::Albumless => query = query.filter(albums::id.is_null()),
+        AlbumFilter::Any => (),
+    }
+    let songs = query
+        .select((
+            songs::id,
+            songs::track,
+            songs::title,
+            artists::name,
+            albums::title.nullable(),
+            songs::file_id,
+            songs::created_at,
+        ))
+        .get_results(conn)
+        .await
+        .context("Failed to get songs")?;
+
+    Ok(songs)
+}
+
+/// Get songs
+#[utoipa::path(
+    get,
+    path = "/api/song",
+    responses(
+        (status = 200, description = "Got all songs", body = [Song])
+    )
+)]
+pub async fn get_songs(Extension(pool): Extension<SqlitePool>) -> Result<Json<Vec<Song>>, Error> {
+    let mut conn = pool.get().await.expect("can connect to sqlite");
+
+    Ok(Json(songs(&mut conn, AlbumFilter::Any).await?))
+}
+
+#[derive(Debug, Deserialize, TS, ToSchema)]
+#[ts(export, export_to = "../web_server-types/")]
+pub struct PutSongMetadata {
+    #[ts(type = "number | null")]
+    track: Option<i64>,
+    title: String,
+    artist: String,
+    album: Option<String>,
+    cover_path: Option<String>,
+}
+
+/// Upsert song metadata
+#[utoipa::path(
+    put,
+    path = "/api/audio/{id}/metadata",
+    request_body(content = PutSongMetadata, description = "Metadata to set"),
+    responses(
+        (status = 200, description = "Put metadata", body = Song)
+    )
+)]
+pub async fn put_metadata(
+    Path(id): Path<i64>,
+    Extension(pool): Extension<SqlitePool>,
+    TsToken(token): TsToken,
+    req: Result<Json<PutSongMetadata>, JsonRejection>,
+) -> Result<Json<Song>, Error> {
+    let mut conn = pool.get().await.expect("can connect to sqlite");
+    let Json(metadata) = req?;
+
+    let uid = uid_by_token(&mut conn, &token).await?;
+    let song = update_song_metadata(&mut conn, &uid, id, metadata).await?;
+
+    Ok(Json(song))
+}
+
+#[derive(Debug, ToSchema, Insertable)]
+#[diesel(table_name = songs)]
+pub struct DbSongMetadata {
+    track: Option<i64>,
+    title: String,
+    artist_id: i64,
+    album_id: Option<i64>,
+    file_id: i64,
+    created_at: i64,
+    created_by: String,
+}
+
+async fn update_song_metadata(
+    conn: &mut SqliteConn,
+    uid: &str,
+    file_id: i64,
+    metadata: PutSongMetadata,
+) -> Result<Song, Error> {
+    let (artist_id, artist) = get_or_insert_artist(conn, uid, &metadata.artist).await?;
+    let (album_id, album) =
+        get_or_insert_album(conn, uid, artist_id, &metadata.cover_path, &metadata.album)
+            .await?
+            .unzip();
+
+    // let (song_id, song_track, song_title, song_created_at) = diesel::update(songs::table)
+    //     .set(SongMetadataChanges {
+    //         track: metadata.track,
+    //         title: metadata.title,
+    //         artist_id,
+    //         album_id,
+    //     })
+    //     .returning((songs::id, songs::track, songs::title, songs::created_at))
+    //     .get_result::<(i64, Option<i64>, String, i64)>(conn)
+    //     .await
+    //     .context("Failed to update song")?;
+
+    let (id, track, title, created_at) = upsert_song(
+        conn,
+        &DbSongMetadata {
+            track: metadata.track,
+            title: metadata.title,
+            artist_id,
+            album_id,
+            file_id,
+            created_at: unix_timestamp(),
+            created_by: uid.to_owned(),
+        },
+    )
+    .await?;
+
+    Ok(Song {
+        id,
+        track,
+        title,
+        artist,
+        album,
+        file_id,
+        created_at,
+    })
+}
+
+pub async fn upsert_song(
+    conn: &mut SqliteConn,
+    metadata: &DbSongMetadata,
+) -> Result<(i64, Option<i64>, String, i64), Error> {
+    let res = diesel::insert_into(songs::table)
+        .values(metadata)
+        .on_conflict(songs::file_id)
+        .do_update()
+        .set((
+            songs::track.eq(metadata.track),
+            songs::title.eq(&metadata.title),
+            songs::artist_id.eq(metadata.artist_id),
+            songs::album_id.eq(metadata.album_id),
+        ))
+        .returning((songs::id, songs::track, songs::title, songs::created_at))
+        .get_result(conn) // Type <(i64, String)> is inferred
+        .await
+        .optional()
+        .context("Failed to upsert song metadata")?;
+
+    let res = match res {
+        Some(res) => res,
+        None => songs::table
+            .filter(songs::file_id.eq(metadata.file_id))
+            .select((songs::id, songs::track, songs::title, songs::created_at))
+            .get_result::<(i64, Option<i64>, String, i64)>(conn)
+            .await
+            .context("Failed to get song")?,
+    };
+
+    Ok(res)
+}
+
+async fn get_or_insert_artist(
+    conn: &mut SqliteConn,
+    uid: &str,
+    artist: &String,
+) -> Result<(i64, String), Error> {
+    Ok(conn
+        .transaction(|conn| {
+            async {
+                let existing = artists::table
+                    .filter(artists::name.eq(artist))
+                    .select((artists::id, artists::name))
+                    .get_result(conn) // Type <(i64, String)> is inferred
+                    .await
+                    .optional()
+                    .context("Failed to get artist")?;
+
+                if let Some((id, name)) = existing {
+                    return Ok((id, name));
+                }
+
+                let (id, name) = diesel::insert_into(artists::table)
+                    .values((
+                        artists::name.eq(artist),
+                        artists::created_at.eq(unix_timestamp()),
+                        artists::created_by.eq(uid),
+                    ))
+                    .returning((artists::id, artists::name))
+                    .get_result(conn)
+                    .await
+                    .context("Failed to insert artist")?;
+
+                Ok::<_, anyhow::Error>((id, name))
+            }
+            .scope_boxed()
+        })
+        .await?)
+}

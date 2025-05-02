@@ -1,9 +1,10 @@
 use std::time::Duration;
 
-use structopt::clap::AppSettings::*;
+use serde::{Deserialize, Serialize};
 use structopt::StructOpt;
+use structopt::clap::AppSettings::*;
 
-#[derive(StructOpt, Debug)]
+#[derive(StructOpt, Debug, Deserialize, Serialize)]
 #[structopt(
     rename_all = "kebab-case",
     template = "{subcommands}",
@@ -45,7 +46,7 @@ pub enum Command {
     Leave,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 pub enum Seek {
     Positive(Duration),
     Negative(Duration),
@@ -77,7 +78,7 @@ impl std::str::FromStr for Seek {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 pub enum VolumeChange {
     Positive(f64),
     Negative(f64),

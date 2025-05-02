@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
@@ -5,15 +6,17 @@ use anyhow::anyhow;
 use askama::filters::urlencode;
 use async_trait::async_trait;
 use lofty::file::{AudioFile, TaggedFileExt};
-use lofty::picture::PictureType;
 use lofty::probe::Probe;
 use lofty::tag::Accessor;
 use serde::Serialize;
 use structopt::StructOpt;
-use tracing::{debug, error, info, trace, warn, Span};
-use tsclientlib::{data, ChannelId, ClientId, Connection, Identity, Invoker, MessageTarget};
+use tracing::{Span, debug, error, info, trace, warn};
+use ts_rs::TS;
+use tsclientlib::data::Client;
+use tsclientlib::{ChannelId, ClientId, Connection, Identity, Invoker, MessageTarget, data};
+use utoipa::ToSchema;
 use walkdir::WalkDir;
-use xtra::{spawn::Tokio, Actor, Address, Context, Handler, Message, WeakAddress};
+use xtra::{Actor, Address, Context, Handler, Message, WeakAddress, spawn::Tokio};
 
 use crate::audio_player::AudioPlayer;
 use crate::bot::{BotDisonnected, Connect, MasterBot, Quit};
@@ -33,7 +36,8 @@ pub struct ChatMessage {
     pub text: String,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, TS, ToSchema)]
+#[ts(export, export_to = "../web_server-types/")]
 pub enum State {
     Playing,
     Paused,
@@ -142,7 +146,8 @@ impl MusicBot {
         let bot_addr = bot.create(None).spawn(&mut Tokio::Global);
 
         if args.local {
-            info!(parent: &span, "Starting in local mode");
+            info!(parent: span, "Spawning stdin reader thread");
+            spawn_stdin_reader(bot_addr.clone());
         } else {
             info!(
                 parent: &span,
@@ -151,21 +156,16 @@ impl MusicBot {
                 address = args.address,
                 "Connecting",
             );
-        }
 
-        let opt = Connection::build(args.address)
-            .version(tsclientlib::Version::Linux_3_3_2)
-            .name(format!("🎵 {}", args.name))
-            .identity(args.identity)
-            .log_commands(args.verbose >= 1)
-            .log_packets(args.verbose >= 2)
-            .log_udp_packets(args.verbose >= 3)
-            .channel(args.channel);
-        bot_addr.send(Connect(opt)).await.unwrap().unwrap();
-
-        if args.local {
-            debug!(parent: span, "Spawning stdin reader thread");
-            spawn_stdin_reader(bot_addr.clone());
+            let opt = Connection::build(args.address)
+                .version(tsclientlib::Version::Linux_3_3_2)
+                .name(format!("🎵 {}", args.name))
+                .identity(args.identity)
+                .log_commands(args.verbose >= 1)
+                .log_packets(args.verbose >= 2)
+                .log_udp_packets(args.verbose >= 3)
+                .channel(args.channel);
+            bot_addr.send(Connect(opt)).await.unwrap().unwrap();
         }
 
         bot_addr
@@ -206,6 +206,8 @@ impl MusicBot {
 
         if let Some(ts) = &mut self.teamspeak {
             ts.send_message_to_channel(text).await?;
+        } else {
+            println!("Bot message: {}", text);
         }
 
         Ok(())
@@ -345,7 +347,10 @@ impl MusicBot {
                 }
 
                 match metadata_from_file(&path, &user) {
-                    Ok(m) => m,
+                    Ok(m) => AudioMetadata {
+                        id: self.playlist.top_id() + 1,
+                        ..m
+                    },
                     Err(e) => {
                         warn!(
                             parent: &self.span,
@@ -355,11 +360,14 @@ impl MusicBot {
                         );
 
                         AudioMetadata {
+                            id: self.playlist.top_id() + 1,
                             // FIXME: Since we use a rust string non-utf8 file names
                             // will not work as expected
                             uri: format!("{}{}", FILE_PREFIX, path.to_string_lossy()),
                             webpage_url: None,
                             title: path.file_name().unwrap().to_string_lossy().to_string(),
+                            artist: None,
+                            album: None,
                             thumbnail: None,
                             duration: None,
                             added_by: user,
@@ -626,16 +634,14 @@ impl MusicBot {
             ts.disconnect(&reason).await?;
         }
 
-        if inform_master {
-            if let Some(master) = &self.master {
-                master
-                    .send(BotDisonnected {
-                        name: self.name.clone(),
-                        identity: self.identity.clone(),
-                    })
-                    .await
-                    .unwrap();
-            }
+        if inform_master && let Some(master) = &self.master {
+            master
+                .send(BotDisonnected {
+                    name: self.name.clone(),
+                    identity: self.identity.clone(),
+                })
+                .await
+                .unwrap();
         }
 
         Ok(())
@@ -718,6 +724,34 @@ impl Handler<GetChannel> for MusicBot {
     }
 }
 
+pub struct ApiCommand {
+    pub client: Client,
+    pub command: Command,
+}
+impl Message for ApiCommand {
+    type Result = anyhow::Result<()>;
+}
+
+#[async_trait]
+impl Handler<ApiCommand> for MusicBot {
+    async fn handle(&mut self, cmd: ApiCommand, _: &mut Context<Self>) -> anyhow::Result<()> {
+        let client = cmd.client;
+        self.on_command(
+            cmd.command,
+            Invoker {
+                name: client.name,
+                id: client.id,
+                uid: client.uid,
+            },
+        )
+        .await
+    }
+}
+
+impl Message for VolumeChange {
+    type Result = anyhow::Result<()>;
+}
+
 #[async_trait]
 impl Handler<Quit> for MusicBot {
     async fn handle(&mut self, q: Quit, _: &mut Context<Self>) -> anyhow::Result<()> {
@@ -741,32 +775,21 @@ fn metadata_from_file(path: &Path, user: &str) -> Result<AudioMetadata, anyhow::
         .primary_tag()
         .ok_or_else(|| anyhow!("file does not contain metadata or filetype is unknown"))?;
 
-    let title = match (tag.title(), tag.artist()) {
-        (Some(title), Some(artist)) => format!("{} - {}", title, artist),
-        (Some(title), _) => title.to_string(),
-        (_, _) => path.file_name().unwrap().to_string_lossy().to_string(),
-    };
-
-    let mut cover = None;
-    for picture in tag.pictures() {
-        if picture.pic_type() == PictureType::CoverFront {
-            // The image type might be wrong but it does not seem like the big browsers
-            // care so finding the correct type does not seem like it is worth the effort.
-            cover = Some(format!(
-                "data:image/jpg;base64,{}",
-                base64::encode(picture.data())
-            ));
-        }
-    }
     Ok(AudioMetadata {
+        id: 0,
         uri: format!(
             "{}{}",
             FILE_PREFIX,
             urlencode(&path.to_string_lossy()).expect("it cant fail")
         ),
         webpage_url: None,
-        title,
-        thumbnail: cover,
+        title: tag
+            .title()
+            .map(Cow::into_owned)
+            .unwrap_or_else(|| path.file_name().unwrap().to_string_lossy().to_string()),
+        artist: tag.artist().map(Cow::into_owned),
+        album: tag.album().map(Cow::into_owned),
+        thumbnail: None,
         duration: Some(file.properties().duration()),
         added_by: user.to_owned(),
     })

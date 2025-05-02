@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use tracing::{info, Span};
+use tracing::{Span, info};
 
 use crate::youtube_dl::AudioMetadata;
 
@@ -21,6 +21,7 @@ impl Playlist {
         info!(
             parent: &self.span,
             title = &data.title,
+            artist = &data.artist,
             "Adding to playlist"
         );
 
@@ -33,6 +34,17 @@ impl Playlist {
             parent: &self.span,
             title = res.as_ref().map(|r| &r.title),
             "Popping from playlist",
+        );
+
+        res
+    }
+
+    pub fn get(&mut self, idx: usize) -> Option<&AudioMetadata> {
+        let res = self.data.get(idx);
+        info!(
+            parent: &self.span,
+            title = res.as_ref().map(|r| &r.title),
+            "Getting from playlist",
         );
 
         res
@@ -56,5 +68,9 @@ impl Playlist {
         self.data.clear();
 
         info!(parent: &self.span, "Cleared playlist");
+    }
+
+    pub fn top_id(&self) -> i64 {
+        self.data.iter().map(|a| a.id).max().unwrap_or(0)
     }
 }

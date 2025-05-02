@@ -1,20 +1,38 @@
 use std::time::Duration;
 
+use diesel::Queryable;
 use std::process::Stdio;
 use tokio::process::Command;
 
 use serde::{Deserialize, Serialize};
 
-use tracing::{debug, Span};
+use tracing::{Span, debug};
+use ts_rs::TS;
+use utoipa::ToSchema;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+use crate::db_util::{schema_opt_duration, serialize_opt_duration};
+
+#[derive(Serialize, Deserialize, Clone, Debug, TS, ToSchema, Queryable)]
+#[ts(export, export_to = "../web_server-types/")]
 pub struct AudioMetadata {
+    #[ts(type = "number")]
+    pub id: i64,
     #[serde(rename = "url")]
     pub uri: String,
     pub webpage_url: Option<String>,
     pub title: String,
+    pub artist: Option<String>,
+    pub album: Option<String>,
     pub thumbnail: Option<String>,
-    #[serde(default, deserialize_with = "duration_deserialize")]
+
+    #[serde(
+        default,
+        deserialize_with = "duration_deserialize",
+        serialize_with = "serialize_opt_duration"
+    )]
+    #[schema(example = 170)]
+    #[schema(schema_with = schema_opt_duration)]
+    #[ts(type = "number | null")]
     pub duration: Option<Duration>,
     #[serde(skip)]
     pub added_by: String,

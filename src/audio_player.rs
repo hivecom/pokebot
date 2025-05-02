@@ -1,8 +1,8 @@
 use std::sync::Once;
 use std::time::Duration;
 
-use gst::prelude::*;
 use gst::GhostPad;
+use gst::prelude::*;
 use gstreamer as gst;
 use gstreamer_app::{AppSink, AppSinkCallbacks};
 use gstreamer_audio::{StreamVolume, StreamVolumeFormat};
@@ -313,10 +313,10 @@ impl AudioPlayer {
 
             match msg.view() {
                 MessageView::StateChanged(state) => {
-                    if let Some(src) = state.src() {
-                        if src.name() != pipeline_name {
-                            return gst::BusSyncReply::Drop;
-                        }
+                    if let Some(src) = state.src()
+                        && src.name() != pipeline_name
+                    {
+                        return gst::BusSyncReply::Drop;
                     }
 
                     let old = state.old();

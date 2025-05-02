@@ -1,56 +1,113 @@
 use std::time::Duration;
 
-use askama::Template;
-use axum::extract::Path;
-use axum::response::{Html, IntoResponse};
-use axum::routing::{get, get_service, post};
-use axum::{Extension, Form, Router};
-use serde::{Deserialize, Serialize};
+use axum::extract::DefaultBodyLimit;
+use axum::routing::{delete, get, get_service, post, put};
+use axum::{Extension, Router};
+use serde::Serialize;
 use tokio::sync::oneshot;
+use tower_cookies::CookieManagerLayer;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
+use tracing::info;
+use ts_rs::TS;
+use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
+use utoipa::{Modify, OpenApi, ToSchema};
+use utoipa_swagger_ui::SwaggerUi;
 use xtra::WeakAddress;
 
+use crate::SqlitePool;
 use crate::bot::MasterBot;
+use crate::db_util::{schema_opt_duration, serialize_opt_duration};
+use crate::web_server::api::{album, audio_file, favourite, song};
 use crate::youtube_dl::AudioMetadata;
 
 mod api;
 mod bot_data;
-mod default;
-mod front_end_cookie;
-mod tmtu;
+mod login;
 pub use bot_data::*;
-use front_end_cookie::FrontEnd;
 
-pub struct WebServerArgs {
-    pub bind_address: String,
-    pub bot: WeakAddress<MasterBot>,
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        login::token,
+        audio_file::upload,
+        audio_file::get_all,
+        song::get_songs,
+        album::get_albums,
+        song::put_metadata,
+        api::get_bot,
+        api::put_state,
+        api::get_currently_playing,
+        api::post_currently_playing,
+        favourite::get_all,
+        favourite::post,
+        favourite::delete,
+    ),
+    components(schemas(
+        login::Login,
+        audio_file::AudioFile,
+        audio_file::SongMetadata,
+        audio_file::UploadResponse,
+        song::Song,
+        favourite::Favourite,
+    )),
+    modifiers(&SecurityAddon),
+    security(
+        ("pokebot-token-header" = []),
+    ),
+)]
+struct ApiDoc;
+
+struct SecurityAddon;
+
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        if let Some(components) = openapi.components.as_mut() {
+            components.add_security_scheme(
+                "pokebot-token-header",
+                SecurityScheme::Http(Http::new(HttpAuthScheme::Bearer)),
+            );
+        }
+    }
 }
 
 pub async fn start(
     web_root: &str,
-    args: WebServerArgs,
+    bind_address: String,
+    bot: WeakAddress<MasterBot>,
+    db_pool: SqlitePool,
     shutdown_rx: oneshot::Receiver<()>,
 ) -> std::io::Result<()> {
-    let bot = args.bot;
-    let bind_address = args.bind_address;
-
-    // FIXME: Add logging
+    info!("Listening on {}", &bind_address);
     let listener = tokio::net::TcpListener::bind(&bind_address).await?;
     axum::serve(
         listener,
         Router::new()
-            .route("/", get(index))
-            .route("/bot/{name}", get(get_bot))
-            .route("/api/bots/", get(api::get_bot_list))
-            .route("/api/bots/{name}", get(api::get_bot))
-            .route("/docs/api", get(get_api_docs))
-            .route("/front-end", post(post_front_end))
+            .merge(SwaggerUi::new("/swagger").url("/api-doc/openapi.json", ApiDoc::openapi()))
+            .route("/api/login", post(login::token))
+            .route("/api/audio", get(audio_file::get_all))
+            .route(
+                "/api/audio",
+                post(audio_file::upload).layer(DefaultBodyLimit::max(100 * 1024 * 1024)),
+            )
+            .route("/api/audio/{id}/metadata", put(song::put_metadata))
+            .route("/api/song", get(song::get_songs))
+            .route("/api/album", get(album::get_albums))
+            .route("/api/favourite", get(favourite::get_all))
+            .route("/api/song/{id}/favourite", post(favourite::post))
+            .route("/api/song/{id}/favourite", delete(favourite::delete))
+            .route("/api/playlist/current", get(api::get_currently_playing))
+            .route("/api/playlist/current", post(api::post_currently_playing))
+            .route("/api/bot/self", get(api::get_bot))
+            .route("/api/bot/self", put(api::put_state))
             .nest_service("/static", get_service(ServeDir::new(web_root)))
+            .nest_service("/covers", get_service(ServeDir::new("./covers")))
+            .layer(Extension(db_pool))
             .layer(CorsLayer::permissive())
             .layer(TraceLayer::new_for_http())
-            .layer(Extension(bot.clone())),
+            .layer(Extension(bot.clone()))
+            .layer(CookieManagerLayer::new()),
     )
     .with_graceful_shutdown(async {
         shutdown_rx.await.unwrap();
@@ -60,67 +117,21 @@ pub async fn start(
     Ok(())
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "kebab-case")]
-struct FrontEndForm {
-    front_end: FrontEnd,
-}
-
-async fn post_front_end(Form(form): Form<FrontEndForm>) -> impl IntoResponse {
-    front_end_cookie::set_front_end(form.front_end)
-}
-
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS, ToSchema)]
+#[ts(export, export_to = "../web_server-types/")]
 pub struct BotData {
     pub name: String,
+
     pub state: crate::bot::State,
+
     pub volume: f64,
+
+    #[serde(serialize_with = "serialize_opt_duration")]
+    #[schema(schema_with = schema_opt_duration)]
+    #[ts(type = "number | null")]
     pub position: Option<Duration>,
+
     pub currently_playing: Option<AudioMetadata>,
+
     pub playlist: Vec<AudioMetadata>,
-}
-
-async fn index(Extension(bot): Extension<WeakAddress<MasterBot>>, front: FrontEnd) -> Html<String> {
-    match front {
-        FrontEnd::Default => default::index(bot).await,
-        FrontEnd::Tmtu => tmtu::index(bot).await,
-    }
-}
-
-async fn get_bot(
-    Extension(bot): Extension<WeakAddress<MasterBot>>,
-    Path(name): Path<String>,
-    front: FrontEnd,
-) -> impl IntoResponse {
-    match front {
-        FrontEnd::Default => default::get_bot(bot, name).await,
-        FrontEnd::Tmtu => tmtu::get_bot(bot, name).await,
-    }
-}
-
-#[derive(Template)]
-#[template(path = "docs/api.htm")]
-struct ApiDocsTemplate;
-
-async fn get_api_docs() -> Html<String> {
-    Html(ApiDocsTemplate.render().unwrap())
-}
-
-mod filters {
-    use std::time::Duration;
-
-    pub fn fmt_duration(
-        duration: &Option<Duration>,
-        _: &dyn askama::Values,
-    ) -> Result<String, askama::Error> {
-        if let Some(duration) = duration {
-            let secs = duration.as_secs();
-            let mins = secs / 60;
-            let submin_secs = secs % 60;
-
-            Ok(format!("{:02}:{:02}", mins, submin_secs))
-        } else {
-            Ok(String::from("--:--"))
-        }
-    }
 }
