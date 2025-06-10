@@ -33,8 +33,6 @@ gstreamer = "0.17.1"
 gstreamer-app = "0.17.0"
 gstreamer-audio = "0.17.0"
 
-id3 = "0.6.4"
-metaflac = "0.2.4"
 base64 = "0.13.0"
 walkdir = "2.3.2"
 
