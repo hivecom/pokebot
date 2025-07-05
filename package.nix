@@ -1,5 +1,11 @@
 {
-  pkgs,
+  makeWrapper,
+  pkg-config,
+  cmake,
+  glib,
+  openssl,
+  libopus,
+  gst_all_1,
   lib,
   rustPlatform,
   yt-dlp,
@@ -15,8 +21,8 @@ rustPlatform.buildRustPackage {
   };
   src = lib.cleanSource ./.;
 
-  nativeBuildInputs = with pkgs; [makeWrapper pkg-config cmake];
-  buildInputs = with pkgs;
+  nativeBuildInputs = [makeWrapper pkg-config cmake];
+  buildInputs =
     [
       glib
       openssl
@@ -27,19 +33,20 @@ rustPlatform.buildRustPackage {
       gst-plugins-base
       gst-plugins-good
       gst-plugins-bad
+      gst-plugins-ugly
     ]);
 
   postInstall = ''
     wrapProgram $out/bin/pokebot \
       --prefix GST_PLUGIN_SYSTEM_PATH_1_0 : "$GST_PLUGIN_SYSTEM_PATH_1_0" \
       --set PATH ${lib.makeBinPath [
-        yt-dlp
-      ]}
-    '';
+      yt-dlp
+    ]}
+  '';
 
   meta = {
     description = "TeamSpeak 3 Music Bot";
     mainProgram = "pokebot";
-    maintainers = with lib.maintainers; [ jokler ];
+    maintainers = with lib.maintainers; [jokler];
   };
 }

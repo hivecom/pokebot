@@ -1,11 +1,10 @@
 # pokebot
 
 ```
-pokebot 0.2.0
-Jokler <jokler@protonmail.com>
+pokebot 0.3.0
 
 USAGE:
-    pokebot [FLAGS] [OPTIONS] [config_path]
+    pokebot [FLAGS] [OPTIONS] [config-path]
 
 FLAGS:
     -h, --help       Prints help information
@@ -15,17 +14,17 @@ FLAGS:
 
 OPTIONS:
     -a, --address <address>                         The address of the server to connect to
-    -g, --generate-identities <gen_id_count>        Generate 'count' identities
-    -d, --master_channel <master_channel>           The channel the master bot should connect to
-    -w, --increase-security-level <wanted_level>    Increases the security level of all identities in the config file
+    -g, --generate-identities <gen-id-count>        Generate 'count' identities
+    -d, --master_channel <master-channel>           The channel the master bot should connect to
+    -w, --increase-security-level <wanted-level>    Increases the security level of all identities in the config file
 
 ARGS:
-    <config_path>    Configuration file [default: config.toml]
+    <config-path>    Configuration file [default: config.toml]
 ```
 ## Usage
 
  1. Poke the main bot.
- 2. Once the secondary bot joins your channel, type !help for a list of commands.
+ 2. Once the secondary bot joins your channel, type `!help` for a list of commands.
  
  **Chat commands:**
  ```
@@ -44,8 +43,15 @@ ARGS:
 
 ## Compiling
 
+### Nix
+If you are using nix you can enter the development shell with `nix develop`.
+
+### Other systems
+
 1. Make sure the following are installed
     * cargo + rustc 1.42 or later
+    * `openssl`
+    * `libopus`
     * `gstreamer` development libraries which should be `libgstreamer-dev` and `libgstreamer-plugins-base-dev`
 
 2. Clone the source with `git`:
@@ -60,3 +66,7 @@ ARGS:
     ```
 
     This creates the binary under `target/release/`.
+
+## This repo is a flake
+
+Create `config.toml` based on `config.toml.example` and run with `nix run github:hivecom/pokebot`.
