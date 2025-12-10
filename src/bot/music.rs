@@ -460,7 +460,7 @@ impl MusicBot {
         let known_exts = [
             "aac", "ape", "aiff", "aif", "afc", "aifc", "mp3", "mp2", "mp1", "wav", "wave", "wv",
             "opus", "flac", "ogg", "mp4", "m4a", "m4b", "m4p", "m4r", "m4v", "3gp", "mpc", "mp+",
-            "mpp", "spx",
+            "mpp", "spx", "webm",
         ]
         .iter()
         .map(OsStr::new)
