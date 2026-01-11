@@ -1,9 +1,12 @@
-{overlays}: {
-  onlyfan = import ./pokebot-service.nix;
+{ overlays }:
+{
+  pokebot = import ./pokebot-service.nix;
 
-  overlayNixpkgsForThisInstance = {pkgs, ...}: {
-    nixpkgs = {
-      inherit overlays;
+  overlayNixpkgsForThisInstance =
+    { pkgs, ... }:
+    {
+      nixpkgs = {
+        inherit overlays;
+      };
     };
-  };
 }

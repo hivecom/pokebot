@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
+use anyhow::Context;
 use structopt::clap::AppSettings;
 use structopt::StructOpt;
 #[cfg(unix)]
@@ -94,7 +95,8 @@ async fn run() -> Result<(), anyhow::Error> {
         tokio::task::spawn(quit()),
     );
 
-    let mut file = File::open(&args.config_path)?;
+    let mut file = File::open(&args.config_path)
+        .with_context(|| format!("Failed to open {}", args.config_path.to_string_lossy()))?;
     let mut toml = String::new();
     file.read_to_string(&mut toml)?;
 
