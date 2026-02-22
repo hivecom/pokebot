@@ -37,6 +37,10 @@ rustPlatform.buildRustPackage {
     ]);
 
   postInstall = ''
+
+    mkdir -p $out/share/pokebot
+    mv web_server/static/* $out/share/pokebot
+
     wrapProgram $out/bin/pokebot \
       --prefix GST_PLUGIN_SYSTEM_PATH_1_0 : "$GST_PLUGIN_SYSTEM_PATH_1_0" \
       --set PATH ${lib.makeBinPath [

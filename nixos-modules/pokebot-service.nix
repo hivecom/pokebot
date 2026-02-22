@@ -1,14 +1,32 @@
 {
+  modulesPath,
   config,
   pkgs,
   lib ? pkgs.lib,
   ...
 }:
-with lib;
-let
+with lib; let
   cfg = config.services.pokebot;
-in
-{
+  format = pkgs.formats.toml {};
+  configFile =
+    if cfg.configFile != null
+    then cfg.configFile
+    else
+      format.generate "pokebot.toml" {
+        address = cfg.teamspeakAddress;
+        inherit (cfg.main) channel;
+        music_root = cfg.musicRoot;
+        verbose = cfg.verbosity;
+        volume = cfg.music.defaultVolume;
+        webserver_enable = cfg.webserver.enable;
+        inherit (cfg.webserver) domain;
+        bind_address = cfg.webserver.bindAddress;
+        id = cfg.main.identity;
+        master_name = cfg.main.name;
+        inherit (cfg.music) names;
+        ids = cfg.music.identities;
+      };
+in {
   ###### interface
   options = {
     services.pokebot = {
@@ -16,15 +34,24 @@ in
         type = types.bool;
         default = false;
         description = ''
-          Whether to run pokebot
+          Whether to run pokebot.
         '';
       };
-      package = lib.mkOption {
-        type = lib.types.package;
-        default = pkgs.pokebot;
-        defaultText = "pkgs.pokebot";
+      package = mkOption {
+        type = types.package;
+        default = pkgs.callPackage ../package.nix {};
         description = "Pokebot package";
       };
+
+      configFile = mkOption {
+        type = types.nullOr types.path;
+        default = null;
+        description = ''
+          Config file path for Pokebot.
+          If this option is defined, the rest of the configuration will be ignored.
+        '';
+      };
+
       teamspeakAddress = mkOption {
         type = types.str;
         default = "localhost";
@@ -35,7 +62,7 @@ in
       musicRoot = mkOption {
         type = types.str;
         description = ''
-          Location to look for music in
+          Location to look for music in.
         '';
       };
       verbosity = mkOption {
@@ -48,6 +75,7 @@ in
       webserver = {
         enable = mkOption {
           type = types.bool;
+          default = false;
           description = ''
             Whether to enable the webserver.
           '';
@@ -73,6 +101,24 @@ in
               Whether to enable nginx virtual host management.
               Further nginx configuration can be done by adapting <literal>services.nginx.virtualHosts.&lt;name&gt;</literal>.
               See <xref linkend="opt-services.nginx.virtualHosts"/> for further information.
+            '';
+          };
+          virtualHost = mkOption {
+            type = types.submodule (
+              recursiveUpdate (import (modulesPath + "/services/web-servers/nginx/vhost-options.nix") {
+                inherit config lib;
+              }) {}
+            );
+            example = literalExpression ''
+              {
+                serverName = "pokebot.example.org";
+                forceSSL = true;
+                enableACME = true;
+              }
+            '';
+            description = ''
+              Nginx configuration can be done by adapting `services.nginx.virtualHosts.<name>`.
+              See [](#opt-services.nginx.virtualHosts) for further information.
             '';
           };
         };
@@ -125,15 +171,16 @@ in
 
   config = mkIf cfg.enable {
     systemd.services.pokebot = {
-      wantedBy = [ "multi-user.target" ];
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
+      wantedBy = ["multi-user.target"];
+      after = ["network-online.target"];
+      wants = ["network-online.target"];
       description = "TeamSpeak 3 Music Bot";
+      environment.WEB_ROOT = "${cfg.package}/share/pokebot";
       serviceConfig = {
-        ExecStart = "${lib.getExe cfg.package} /etc/pokebot/config.toml";
+        LoadCredential = "config.toml:${configFile}";
+        ExecStart = "${getExe cfg.package} $\{CREDENTIALS_DIRECTORY\}/config.toml";
         Restart = "always";
         RestartSec = 30;
-        WorkingDirectory = "/etc/pokebot";
 
         DynamicUser = true;
         StateDirectory = "pokebot";
@@ -148,7 +195,7 @@ in
         ProtectKernelTunables = true;
         ProtectProc = "invisible";
         RemoveIPC = true;
-        RestrictAddressFamilies = [ ];
+        RestrictAddressFamilies = [];
         RestrictNamespaces = true;
         RestrictRealtime = true;
         NoNewPrivileges = true;
@@ -156,33 +203,18 @@ in
         PrivateTmp = true;
       };
     };
-    # https://discourse.nixos.org/t/how-to-create-generic-yaml-toml-ini-files/29797
-    # FIXME: security implications of being in the nix store?
-    environment.etc."pokebot/config.toml".source = (pkgs.formats.toml { }).generate "pokebot-config" {
-      address = cfg.teamspeakAddress;
-      inherit (cfg.main) channel;
-      music_root = cfg.musicRoot;
-      verbose = cfg.verbosity;
-      volume = cfg.music.defaultVolume;
-      webserver_enable = cfg.webserver.enable;
-      inherit (cfg.webserver) domain;
-      bind_address = cfg.webserver.bindAddress;
-      id = cfg.main.identity;
-      master_name = cfg.main.name;
-      inherit (cfg.music) names;
-      ids = cfg.music.identities;
-    };
 
     services.nginx = mkIf cfg.webserver.nginx.enable {
       enable = true;
-      virtualHosts = {
-        ${cfg.webserver.domain} = {
+      virtualHosts.${cfg.webserver.nginx.virtualHost.serverName} = lib.mkMerge [
+        cfg.webserver.nginx.virtualHost
+        {
           locations."/" = {
             proxyPass = "http://${cfg.webserver.bindAddress}";
             recommendedProxySettings = true;
           };
-        };
-      };
+        }
+      ];
     };
   };
 }

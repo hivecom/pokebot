@@ -83,6 +83,8 @@ async fn main() {
 }
 
 async fn run() -> Result<(), anyhow::Error> {
+    let web_root = std::env::var("WEB_ROOT").unwrap_or(String::from("web_server/static"));
+
     // Parse command line options
     let args = Args::from_args();
 
@@ -195,7 +197,7 @@ async fn run() -> Result<(), anyhow::Error> {
                 bot: bot.downgrade(),
             };
             tokio::spawn(async move {
-                if let Err(error) = web_server::start(web_args, shutdown_rx).await {
+                if let Err(error) = web_server::start(&web_root, web_args, shutdown_rx).await {
                     error!(%error, "Error in web server");
                 }
             });

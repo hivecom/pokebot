@@ -28,7 +28,11 @@ pub struct WebServerArgs {
     pub bot: WeakAddress<MasterBot>,
 }
 
-pub async fn start(args: WebServerArgs, shutdown_rx: oneshot::Receiver<()>) -> std::io::Result<()> {
+pub async fn start(
+    web_root: &str,
+    args: WebServerArgs,
+    shutdown_rx: oneshot::Receiver<()>,
+) -> std::io::Result<()> {
     let bot = args.bot;
     let bind_address = args.bind_address;
 
@@ -43,7 +47,7 @@ pub async fn start(args: WebServerArgs, shutdown_rx: oneshot::Receiver<()>) -> s
             .route("/api/bots/{name}", get(api::get_bot))
             .route("/docs/api", get(get_api_docs))
             .route("/front-end", post(post_front_end))
-            .nest_service("/static", get_service(ServeDir::new("web_server/static")))
+            .nest_service("/static", get_service(ServeDir::new(web_root)))
             .layer(CorsLayer::permissive())
             .layer(TraceLayer::new_for_http())
             .layer(Extension(bot.clone())),
