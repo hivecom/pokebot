@@ -1,35 +1,36 @@
 {
   description = "TeamSpeak 3 Music Bot";
   inputs = {
-    nixpkgs.url = "nixpkgs/nixos-25.05";
-    fenix = {
-      url = "github:nix-community/fenix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    nixpkgs.url = "nixpkgs/nixos-25.11";
   };
 
   outputs = {
     self,
     nixpkgs,
-    fenix,
   }: let
     supportedSystems = ["x86_64-linux"];
-    forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
-    pkgsFor = nixpkgs.legacyPackages;
+    forEachSystem = nixpkgs.lib.genAttrs supportedSystems;
+    overlayList = [self.overlays.default];
+    pkgsBySystem = forEachSystem (
+      system:
+        import nixpkgs {
+          inherit system;
+          overlays = overlayList;
+        }
+    );
   in {
-    packages = forAllSystems (system: {
-      default = let
-        toolchain = fenix.packages.${system}.stable.toolchain;
-      in
-        pkgsFor.${system}.callPackage ./package.nix {
-          rustPlatform = pkgsFor.${system}.makeRustPlatform {
-            cargo = toolchain;
-            rustc = toolchain;
-          };
-        };
+    overlays.default = final: prev: {pokebot = final.callPackage ./package.nix {};};
+
+    packages = forEachSystem (system: {
+      pokebot =
+        pkgsBySystem.${system}.callPackage ./package.nix {};
+      default = self.packages.${system}.pokebot;
     });
-    devShells = forAllSystems (system: {
-      default = pkgsFor.${system}.callPackage ./shell.nix {};
+
+    devShells = forEachSystem (system: {
+      default = pkgsBySystem.${system}.callPackage ./shell.nix {};
     });
+
+    nixosModules.default = import ./nixos-modules/pokebot-service.nix;
   };
 }

@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
+use anyhow::Context;
 use structopt::clap::AppSettings;
 use structopt::StructOpt;
 #[cfg(unix)]
@@ -82,6 +83,8 @@ async fn main() {
 }
 
 async fn run() -> Result<(), anyhow::Error> {
+    let web_root = std::env::var("WEB_ROOT").unwrap_or(String::from("web_server/static"));
+
     // Parse command line options
     let args = Args::from_args();
 
@@ -94,7 +97,8 @@ async fn run() -> Result<(), anyhow::Error> {
         tokio::task::spawn(quit()),
     );
 
-    let mut file = File::open(&args.config_path)?;
+    let mut file = File::open(&args.config_path)
+        .with_context(|| format!("Failed to open {}", args.config_path.to_string_lossy()))?;
     let mut toml = String::new();
     file.read_to_string(&mut toml)?;
 
@@ -193,7 +197,7 @@ async fn run() -> Result<(), anyhow::Error> {
                 bot: bot.downgrade(),
             };
             tokio::spawn(async move {
-                if let Err(error) = web_server::start(web_args, shutdown_rx).await {
+                if let Err(error) = web_server::start(&web_root, web_args, shutdown_rx).await {
                     error!(%error, "Error in web server");
                 }
             });
