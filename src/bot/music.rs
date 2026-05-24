@@ -189,8 +189,8 @@ impl MusicBot {
         self.player.volume()
     }
 
-    pub async fn current_channel(&mut self) -> anyhow::Result<Option<ChannelId>> {
-        let ts = self.teamspeak.as_mut().expect("current_channel needs ts");
+    pub async fn current_channel(&mut self) -> Option<ChannelId> {
+        let ts = self.teamspeak.as_mut()?;
 
         ts.current_channel().await
     }
@@ -291,16 +291,12 @@ impl MusicBot {
             Command::Stop => {
                 self.player.reset()?;
             }
-            Command::Seek { amount } => match self.player.seek(amount) {
-                Ok(time) => {
-                    self.send_message(format!("New position: {}", ts::bold(&time)))
-                        .await?;
-                }
-                Err(error) => {
+            Command::Seek { amount } => {
+                if let Err(error) = self.player.seek(amount) {
                     warn!(parent: &self.span, %error, "Failed to seek");
                     self.send_message(String::from("Failed to seek")).await?;
                 }
-            },
+            }
             Command::Next => {
                 if !self.playlist.is_empty() {
                     info!(parent: &self.span, "Skipping to next track");
@@ -398,7 +394,14 @@ impl MusicBot {
             let msg = if metadata.uri.starts_with(FILE_PREFIX) {
                 format!(
                     "Added local file {}{} to playlist",
-                    ts::underline(&metadata.title),
+                    ts::underline(&format!(
+                        "{}{}",
+                        metadata.title,
+                        metadata
+                            .album
+                            .map(|a| format!(" - {a}"))
+                            .unwrap_or_default()
+                    )),
                     duration
                 )
             } else {
@@ -606,10 +609,9 @@ impl MusicBot {
             _ => return Ok(()),
         };
 
-        let current_channel = self
-            .current_channel()
-            .await?
-            .expect("Current channel is known");
+        let Some(current_channel) = self.current_channel().await else {
+            return Ok(());
+        };
         if old_channel == current_channel {
             let quit = match self.user_count(current_channel).await {
                 Ok(count) if count <= 1 => Some(String::from("Channel is empty")),
@@ -710,16 +712,12 @@ impl Handler<GetBotData> for MusicBot {
 
 pub struct GetChannel;
 impl Message for GetChannel {
-    type Result = anyhow::Result<Option<ChannelId>>;
+    type Result = Option<ChannelId>;
 }
 
 #[async_trait]
 impl Handler<GetChannel> for MusicBot {
-    async fn handle(
-        &mut self,
-        _: GetChannel,
-        _: &mut Context<Self>,
-    ) -> anyhow::Result<Option<ChannelId>> {
+    async fn handle(&mut self, _: GetChannel, _: &mut Context<Self>) -> Option<ChannelId> {
         self.current_channel().await
     }
 }

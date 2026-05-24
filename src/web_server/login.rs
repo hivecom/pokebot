@@ -25,7 +25,7 @@ use crate::{SqliteConn, bot::MasterBot, schema::tokens, web_server::api::error::
 use super::LoginRequest;
 
 pub async fn uid_by_token(conn: &mut SqliteConn, token: &str) -> anyhow::Result<String> {
-    debug!("Trying to get uid by token \"{token}\"");
+    debug!("Trying to get uid by token");
     let uid: String = tokens::table
         .filter(tokens::token.eq(token))
         .select(tokens::uid)

@@ -213,7 +213,7 @@ impl TeamSpeakConnection {
             .as_mut()
             .expect("connect_for_bot was called")
             .with_connection(move |conn| {
-                for client in conn.get_state().expect("can get state").clients.values() {
+                for client in conn.get_state().ok()?.clients.values() {
                     if client.uid.as_ref().map(|uid| uid.to_string()).as_ref() == Some(&uid) {
                         return Some(client.clone());
                     }
@@ -258,18 +258,16 @@ impl TeamSpeakConnection {
         Ok(path)
     }
 
-    pub async fn current_channel(&mut self) -> anyhow::Result<Option<ChannelId>> {
-        let id = self
-            .handle
+    pub async fn current_channel(&mut self) -> Option<ChannelId> {
+        self.handle
             .as_mut()
             .expect("connect_for_bot was called")
             .with_connection(move |conn| {
-                let state = conn.get_state().expect("can get state");
+                let state = conn.get_state().ok()?;
                 state.clients.get(&state.own_client).map(|c| c.channel)
             })
-            .await?;
-
-        Ok(id)
+            .await
+            .ok()?
     }
 
     pub async fn my_id(&mut self) -> anyhow::Result<ClientId> {

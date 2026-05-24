@@ -141,14 +141,14 @@ impl MasterBot {
             None => return Err(BotCreationError::UnfoundUser),
         };
 
-        if Some(channel) == self.teamspeak.current_channel().await.unwrap() {
+        if Some(channel) == self.teamspeak.current_channel().await {
             return Err(BotCreationError::MasterChannel(
                 self.config.master_name.clone(),
             ));
         }
 
         for bot in self.connected_bots.values() {
-            if let Ok(c) = bot.send(GetChannel).await.unwrap()
+            if let Ok(c) = bot.send(GetChannel).await
                 && c == Some(channel)
             {
                 return Err(BotCreationError::MultipleBots(
@@ -310,9 +310,7 @@ impl MasterBot {
         }
 
         for bot in self.connected_bots.values() {
-            if let Ok(bot_channel) = bot.send(GetChannel).await.unwrap()
-                && bot_channel == Some(channel)
-            {
+            if Some(channel) == bot.send(GetChannel).await.unwrap() {
                 return Some(bot.downgrade());
             }
         }
@@ -372,21 +370,23 @@ impl Actor for MasterBot {
     async fn started(&mut self, ctx: &mut Context<Self>) {
         self.my_addr = Some(ctx.address().unwrap().downgrade());
 
-        let name = self.available_names[0].clone();
-        let bot_args = MusicBotArgs {
-            name: name.clone(),
-            music_root: self.config.music_root.clone(),
-            master: self.my_addr.clone(),
-            local: true,
-            address: self.config.address.clone(),
-            identity: self.available_ids[0].clone(),
-            channel: String::from("local"),
-            verbose: self.config.verbose,
-            volume: self.config.volume,
-            span: span!(Level::ERROR, "", name),
-        };
-        let bot = MusicBot::spawn(bot_args).await;
-        self.connected_bots.insert(name, bot);
+        if self.config.local {
+            let name = self.available_names[0].clone();
+            let bot_args = MusicBotArgs {
+                name: name.clone(),
+                music_root: self.config.music_root.clone(),
+                master: self.my_addr.clone(),
+                local: true,
+                address: self.config.address.clone(),
+                identity: self.available_ids[0].clone(),
+                channel: String::from("local"),
+                verbose: self.config.verbose,
+                volume: self.config.volume,
+                span: span!(Level::ERROR, "", name),
+            };
+            let bot = MusicBot::spawn(bot_args).await;
+            self.connected_bots.insert(name, bot);
+        }
     }
 }
 

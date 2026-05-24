@@ -7,3 +7,6 @@ config.toml
 .direnv
 # nix build output
 result
+
+covers
+songs
