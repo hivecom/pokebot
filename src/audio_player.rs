@@ -113,7 +113,7 @@ impl AudioPlayer {
 
         if let Some(mut callback) = callback {
             let opus_enc = make_element("opusenc", "opus encoder")?;
-            opus_enc.set_property("bitrate", 128_000)?;
+            opus_enc.set_property("bitrate", 100_000)?;
 
             let sink = make_element("appsink", "app sink")?;
 
