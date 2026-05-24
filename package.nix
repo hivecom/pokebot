@@ -17,7 +17,7 @@ rustPlatform.buildRustPackage {
   cargoLock = {
     lockFile = ./Cargo.lock;
     outputHashes = {
-      "ts-bookkeeping-0.1.0" = "sha256-luPHR729nPf1tDKeuZLPLNj/M3mSqFozm9odUlGCmgQ=";
+      "ts-bookkeeping-0.1.0" = "sha256-0/l4tG3l6GnQlQkK0FOO9bm0ztEatidaIHMeKfQvgKE=";
     };
   };
   src = lib.cleanSource ./.;
