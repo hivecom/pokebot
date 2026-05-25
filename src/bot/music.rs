@@ -394,20 +394,13 @@ impl MusicBot {
             let msg = if metadata.uri.starts_with(FILE_PREFIX) {
                 format!(
                     "Added local file {}{} to playlist",
-                    ts::underline(&format!(
-                        "{}{}",
-                        metadata.title,
-                        metadata
-                            .album
-                            .map(|a| format!(" - {a}"))
-                            .unwrap_or_default()
-                    )),
+                    ts::underline(&metadata.full_title()),
                     duration
                 )
             } else {
                 format!(
                     "Added {}{} to playlist",
-                    ts::underline(&metadata.title),
+                    ts::underline(&metadata.full_title()),
                     duration
                 )
             };
@@ -450,15 +443,19 @@ impl MusicBot {
         let msg = if metadata.uri.starts_with(FILE_PREFIX) {
             format!(
                 "Playing local file {} {}",
-                ts::underline(&metadata.title),
+                ts::underline(&metadata.full_title()),
                 duration
             )
         } else {
-            format!("Playing {} {}", ts::underline(&metadata.title), duration)
+            format!(
+                "Playing {} {}",
+                ts::underline(&metadata.full_title()),
+                duration
+            )
         };
 
         self.send_message(msg).await?;
-        self.set_description(format!("Currently playing '{}'", metadata.title))
+        self.set_description(format!("Currently playing '{}'", metadata.full_title()))
             .await;
         self.player.reset().unwrap();
         self.player.set_metadata(metadata).unwrap();

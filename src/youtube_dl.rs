@@ -38,6 +38,19 @@ pub struct AudioMetadata {
     pub added_by: String,
 }
 
+impl AudioMetadata {
+    pub fn full_title(&self) -> String {
+        format!(
+            "{}{}",
+            self.title,
+            self.album
+                .as_ref()
+                .map(|a| format!(" - {a}"))
+                .unwrap_or_default()
+        )
+    }
+}
+
 fn duration_deserialize<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
 where
     D: serde::Deserializer<'de>,

@@ -73,7 +73,6 @@ impl Modify for SecurityAddon {
 }
 
 pub async fn start(
-    web_root: &str,
     bind_address: String,
     bot: WeakAddress<MasterBot>,
     db_pool: SqlitePool,
@@ -101,7 +100,6 @@ pub async fn start(
             .route("/api/playlist/current", post(api::post_currently_playing))
             .route("/api/bot/self", get(api::get_bot))
             .route("/api/bot/self", put(api::put_state))
-            .nest_service("/static", get_service(ServeDir::new(web_root)))
             .nest_service("/covers", get_service(ServeDir::new("./covers")))
             .layer(Extension(db_pool))
             .layer(CorsLayer::permissive())
