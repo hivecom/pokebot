@@ -93,6 +93,21 @@ in {
             Domain to use within the webserver.
           '';
         };
+        databasePath = mkOption {
+          type = types.str;
+          default = "pokebot.db";
+          description = ''
+            Path to store the SQlite datbase at.
+          '';
+        };
+        dataDir = mkOption {
+          type = types.path;
+          default = "/var/lib/pokebot";
+          description = ''
+            Where pokebot should store its files.
+          '';
+        };
+
         nginx = {
           enable = mkOption {
             type = types.bool;
@@ -175,12 +190,16 @@ in {
       after = ["network-online.target"];
       wants = ["network-online.target"];
       description = "TeamSpeak 3 Music Bot";
-      environment.WEB_ROOT = "${cfg.package}/share/pokebot";
+      environment = {
+        WEB_ROOT = "${cfg.package}/share/pokebot";
+        DATABASE_URL = cfg.webserver.databasePath;
+      };
       serviceConfig = {
         LoadCredential = "config.toml:${configFile}";
         ExecStart = "${getExe cfg.package} $\{CREDENTIALS_DIRECTORY\}/config.toml";
         Restart = "always";
         RestartSec = 30;
+        WorkingDirectory = cfg.webserver.dataDir;
 
         DynamicUser = true;
         StateDirectory = "pokebot";
