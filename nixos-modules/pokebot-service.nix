@@ -7,6 +7,7 @@
 }:
 with lib; let
   cfg = config.services.pokebot;
+  defaultUser = "pokebot";
   format = pkgs.formats.toml {};
   configFile =
     if cfg.configFile != null
@@ -41,6 +42,25 @@ in {
         type = types.package;
         default = pkgs.callPackage ../package.nix {};
         description = "Pokebot package";
+      };
+
+      user = mkOption {
+        default = defaultUser;
+        example = "john";
+        type = types.str;
+        description = ''
+          The name of an existing user account to use to own the pokebot server
+          process. If not specified, a default user will be created.
+        '';
+      };
+
+      group = mkOption {
+        default = defaultUser;
+        example = "users";
+        type = types.str;
+        description = ''
+          Group to own the pokebot process.
+        '';
       };
 
       configFile = mkOption {
@@ -201,8 +221,8 @@ in {
         RestartSec = 30;
         WorkingDirectory = cfg.webserver.dataDir;
 
-        DynamicUser = true;
-        StateDirectory = "pokebot";
+        User = cfg.user;
+        Group = cfg.group;
         LockPersonality = true;
         ProtectSystem = true;
         ProtectClock = true;
@@ -220,6 +240,22 @@ in {
         NoNewPrivileges = true;
         PrivateDevices = true;
         PrivateTmp = true;
+      };
+    };
+
+    users.users = optionalAttrs (cfg.user == defaultUser) {
+      ${defaultUser} = {
+        description = "pokebot server owner";
+        group = defaultUser;
+        home = cfg.webserver.dataDir;
+        createHome = true;
+        isSystemUser = true;
+      };
+    };
+
+    users.groups = optionalAttrs (cfg.user == defaultUser) {
+      ${defaultUser} = {
+        members = [defaultUser];
       };
     };
 
