@@ -7,32 +7,6 @@ use crate::bot::{ApiCommand, MasterBot};
 use crate::command::Command;
 use crate::web_server::BotData;
 
-pub struct BotNameListRequest;
-
-impl Message for BotNameListRequest {
-    type Result = Vec<String>;
-}
-
-#[async_trait]
-impl Handler<BotNameListRequest> for MasterBot {
-    async fn handle(&mut self, _: BotNameListRequest, _: &mut Context<Self>) -> Vec<String> {
-        self.bot_names()
-    }
-}
-
-pub struct BotDataListRequest;
-
-impl Message for BotDataListRequest {
-    type Result = Vec<BotData>;
-}
-
-#[async_trait]
-impl Handler<BotDataListRequest> for MasterBot {
-    async fn handle(&mut self, _: BotDataListRequest, _: &mut Context<Self>) -> Vec<BotData> {
-        self.bot_datas().await
-    }
-}
-
 pub struct BotDataRequest {
     pub token: String,
 }
@@ -97,5 +71,28 @@ impl Handler<CommandRequest> for MasterBot {
         } else {
             Err(anyhow!("no bot in your channel"))
         }
+    }
+}
+
+pub struct CreateBotRequest {
+    pub token: String,
+}
+
+impl Message for CreateBotRequest {
+    type Result = Option<BotData>;
+}
+
+#[async_trait]
+impl Handler<CreateBotRequest> for MasterBot {
+    async fn handle(
+        &mut self,
+        CreateBotRequest { token }: CreateBotRequest,
+        _: &mut Context<Self>,
+    ) -> Option<BotData> {
+        let client = self.client_by_user_token(&token).await?;
+
+        self.spawn_bot_for_client(client.id).await.ok()?;
+
+        self.bot_data(&token).await
     }
 }

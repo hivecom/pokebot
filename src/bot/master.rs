@@ -195,7 +195,7 @@ impl MasterBot {
         })
     }
 
-    async fn spawn_bot_for_client(&mut self, id: ClientId) -> anyhow::Result<()> {
+    pub async fn spawn_bot_for_client(&mut self, id: ClientId) -> anyhow::Result<()> {
         match self.bot_args_for_client(id).await {
             Ok(bot_args) => {
                 let name = bot_args.name.clone();

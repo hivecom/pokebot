@@ -15,7 +15,7 @@ use xtra::WeakAddress;
 use crate::command::{Command, Seek, VolumeChange};
 use crate::db_util::{deserialize_opt_duration, schema_opt_duration};
 use crate::schema::{audio_files, songs};
-use crate::web_server::{BotData, BotDataRequest, CommandRequest, ConfigVars};
+use crate::web_server::{BotData, BotDataRequest, CommandRequest, ConfigVars, CreateBotRequest};
 use crate::youtube_dl::AudioMetadata;
 use crate::{MasterBot, SqlitePool};
 
@@ -153,6 +153,27 @@ pub struct PutState {
 
     #[serde(default)]
     pub next: bool,
+}
+
+/// Add a bot to users channel
+#[utoipa::path(
+    put,
+    path = "/api/bot/self",
+    responses(
+        (status = 200, description = "Updated bot state", body = BotData)
+    )
+)]
+pub async fn post_bot(
+    Extension(bot): Extension<WeakAddress<MasterBot>>,
+    TsToken(token): TsToken,
+) -> Result<Json<BotData>, Error> {
+    let bot_data = bot
+        .send(CreateBotRequest { token })
+        .await
+        .unwrap()
+        .context("Failed to get bot data")?;
+
+    Ok(Json(bot_data))
 }
 
 /// Put new bot state update

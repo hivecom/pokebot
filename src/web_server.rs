@@ -106,6 +106,7 @@ pub async fn start(
             .route("/api/playlist/current", get(api::get_currently_playing))
             .route("/api/playlist/current", post(api::post_currently_playing))
             .route("/api/bot/self", get(api::get_bot))
+            .route("/api/bot/self", post(api::post_bot))
             .route("/api/bot/self", put(api::put_state))
             .nest_service("/covers", get_service(ServeDir::new("./covers")))
             .layer(Extension(config_vars))
