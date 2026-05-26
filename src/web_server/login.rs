@@ -17,6 +17,7 @@ use serde::Deserialize;
 use serde_json::json;
 use thiserror::Error;
 use tracing::debug;
+use ts_rs::TS;
 use utoipa::ToSchema;
 use xtra::WeakAddress;
 
@@ -36,7 +37,8 @@ pub async fn uid_by_token(conn: &mut SqliteConn, token: &str) -> anyhow::Result<
     Ok(uid)
 }
 
-#[derive(Deserialize, Debug, ToSchema)]
+#[derive(Deserialize, Debug, ToSchema, TS)]
+#[ts(export, export_to = "../web_server-types/")]
 pub struct Login {
     token: String,
 }
@@ -51,9 +53,9 @@ pub struct Login {
 )]
 pub async fn token(
     Extension(bot): Extension<WeakAddress<MasterBot>>,
-    Form(form): Form<Login>,
+    Json(login): Json<Login>,
 ) -> Result<Json<bool>, Error> {
-    if let Ok(uid) = bot.send(LoginRequest(form.token.clone())).await.unwrap() {
+    if let Ok(uid) = bot.send(LoginRequest(login.token.clone())).await.unwrap() {
         Ok(Json(true))
     } else {
         Ok(Json(false))

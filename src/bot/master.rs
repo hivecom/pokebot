@@ -213,7 +213,7 @@ impl MasterBot {
     }
 
     pub async fn uid_by_web_token(&self, token: &str) -> Result<String, anyhow::Error> {
-        if self.config.local {
+        if self.config.local && token == "local" {
             return Ok(String::from("local"));
         }
 
