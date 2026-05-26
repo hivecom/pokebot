@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::time::Duration;
 
 use axum::extract::DefaultBodyLimit;
@@ -22,7 +23,7 @@ use crate::db_util::{schema_opt_duration, serialize_opt_duration};
 use crate::web_server::api::{album, audio_file, favourite, song};
 use crate::youtube_dl::AudioMetadata;
 
-mod api;
+pub mod api;
 mod bot_data;
 mod login;
 pub use bot_data::*;
@@ -72,10 +73,16 @@ impl Modify for SecurityAddon {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ConfigVars {
+    pub music_root: PathBuf,
+}
+
 pub async fn start(
     bind_address: String,
     bot: WeakAddress<MasterBot>,
     db_pool: SqlitePool,
+    config_vars: ConfigVars,
     shutdown_rx: oneshot::Receiver<()>,
 ) -> std::io::Result<()> {
     info!("Listening on {}", &bind_address);
@@ -101,6 +108,7 @@ pub async fn start(
             .route("/api/bot/self", get(api::get_bot))
             .route("/api/bot/self", put(api::put_state))
             .nest_service("/covers", get_service(ServeDir::new("./covers")))
+            .layer(Extension(config_vars))
             .layer(Extension(db_pool))
             .layer(CorsLayer::permissive())
             .layer(TraceLayer::new_for_http())

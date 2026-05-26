@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use anyhow::Context;
 use axum::{Extension, Json};
 use diesel::prelude::Queryable;
@@ -16,7 +18,7 @@ use crate::{SqliteConn, SqlitePool};
 const DEFAULT_ARTIST: &str = "Unknown Artist";
 
 /// The definition of an album.
-#[derive(Debug, Serialize, TS, ToSchema, Queryable)]
+#[derive(Debug, Serialize, TS, ToSchema, Queryable, Eq)]
 #[ts(export, export_to = "../web_server-types/")]
 pub struct AlbumMetadata {
     #[schema(example = 1)]
@@ -39,7 +41,7 @@ pub struct AlbumMetadata {
     pub created_at: i64,
 }
 
-#[derive(Debug, Serialize, TS, ToSchema)]
+#[derive(Debug, Serialize, TS, ToSchema, Eq)]
 #[ts(export, export_to = "../web_server-types/")]
 pub struct Album {
     #[serde(flatten)]
@@ -52,6 +54,33 @@ pub enum AlbumFilter {
     Id(i64),
     Albumless,
     Any,
+}
+
+impl PartialEq for AlbumMetadata {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl PartialEq for Album {
+    fn eq(&self, other: &Self) -> bool {
+        self.metadata == other.metadata
+    }
+}
+
+impl PartialOrd for Album {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Album {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.metadata
+            .artist
+            .cmp(&other.metadata.artist)
+            .then(self.metadata.title.cmp(&other.metadata.title))
+    }
 }
 
 pub async fn albums(conn: &mut SqliteConn) -> Result<Vec<Album>, Error> {
@@ -87,6 +116,8 @@ pub async fn albums(conn: &mut SqliteConn) -> Result<Vec<Album>, Error> {
             songs: albumless_songs,
         });
     }
+
+    albums.sort();
 
     Ok(albums)
 }

@@ -15,7 +15,7 @@ use xtra::WeakAddress;
 use crate::command::{Command, Seek, VolumeChange};
 use crate::db_util::{deserialize_opt_duration, schema_opt_duration};
 use crate::schema::{audio_files, songs};
-use crate::web_server::{BotData, BotDataRequest, CommandRequest};
+use crate::web_server::{BotData, BotDataRequest, CommandRequest, ConfigVars};
 use crate::youtube_dl::AudioMetadata;
 use crate::{MasterBot, SqlitePool};
 
@@ -70,6 +70,7 @@ pub struct PlaySong {
 pub async fn post_currently_playing(
     Extension(pool): Extension<SqlitePool>,
     Extension(bot): Extension<WeakAddress<MasterBot>>,
+    Extension(vars): Extension<ConfigVars>,
     TsToken(token): TsToken,
     req: Result<Json<PlaySong>, JsonRejection>,
 ) -> Result<(StatusCode, Json<AudioMetadata>), Error> {
@@ -77,7 +78,7 @@ pub async fn post_currently_playing(
 
     let Json(PlaySong { id }) = req?;
 
-    let url: String = audio_files::table
+    let file_path: String = audio_files::table
         .inner_join(songs::table)
         .filter(songs::id.eq(id))
         .select(audio_files::file_path)
@@ -87,8 +88,9 @@ pub async fn post_currently_playing(
         .context("Failed to get song file path")?
         .ok_or(Error::NotFound)?;
 
-    let url = std::path::absolute(url).context("Failed to get absolute path")?;
-    let url = url.to_str().unwrap();
+    let mut absolute = vars.music_root;
+    absolute.push(file_path);
+    let url = absolute.to_str().unwrap();
 
     bot.send(CommandRequest {
         token: token.clone(),

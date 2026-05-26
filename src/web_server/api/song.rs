@@ -117,11 +117,11 @@ pub async fn get_songs(Extension(pool): Extension<SqlitePool>) -> Result<Json<Ve
 #[ts(export, export_to = "../web_server-types/")]
 pub struct PutSongMetadata {
     #[ts(type = "number | null")]
-    track: Option<i64>,
-    title: String,
-    artist: String,
-    album: Option<String>,
-    cover_path: Option<String>,
+    pub track: Option<i64>,
+    pub title: String,
+    pub artist: String,
+    pub album: Option<String>,
+    pub cover_path: Option<String>,
 }
 
 /// Upsert song metadata
@@ -160,7 +160,7 @@ pub struct DbSongMetadata {
     created_by: String,
 }
 
-async fn update_song_metadata(
+pub async fn update_song_metadata(
     conn: &mut SqliteConn,
     uid: &str,
     file_id: i64,

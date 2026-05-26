@@ -43,7 +43,8 @@ pub struct MasterBot {
 pub struct MasterArgs {
     #[serde(default = "default_name")]
     pub master_name: String,
-    pub music_root: Option<PathBuf>,
+    #[serde(default = "default_music_root")]
+    pub music_root: PathBuf,
     #[serde(default = "default_local")]
     pub local: bool,
     pub address: String,
@@ -475,6 +476,13 @@ fn default_name() -> String {
     String::from("PokeBot")
 }
 
+fn default_music_root() -> PathBuf {
+    let mut dir = std::env::current_dir().unwrap();
+    dir.push("./songs");
+
+    dir
+}
+
 fn default_verbose() -> u8 {
     0
 }
@@ -513,7 +521,7 @@ impl MasterArgs {
 
 pub struct MasterConfig {
     pub master_name: String,
-    pub music_root: Option<PathBuf>,
+    pub music_root: PathBuf,
     pub local: bool,
     pub address: String,
     pub verbose: u8,

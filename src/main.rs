@@ -22,10 +22,12 @@ use tsclientlib::Identity;
 
 mod audio_player;
 mod bot;
+mod cli;
 mod command;
 mod db_util;
 mod playlist;
 mod schema;
+mod schema_extensions;
 mod sqlite_mapping;
 mod teamspeak;
 mod web_server;
@@ -33,9 +35,17 @@ mod youtube_dl;
 
 use bot::{MasterArgs, MasterBot, Quit};
 
+use crate::web_server::ConfigVars;
+
 #[derive(StructOpt, Debug)]
 #[structopt(global_settings = &[AppSettings::ColoredHelp])]
 pub struct Args {
+    #[structopt(
+        short = "s",
+        long = "scan-music",
+        help = "Scan music root folder for audio files and metadata"
+    )]
+    scan_music: bool,
     #[structopt(short = "l", long = "local", help = "Run locally in text mode")]
     local: bool,
     #[structopt(
@@ -113,10 +123,16 @@ async fn run() -> Result<(), anyhow::Error> {
 
     let mut config: MasterArgs = toml::from_str(&toml)?;
 
-    if let Some(music_root) = &config.music_root
-        && !music_root.is_dir()
-    {
+    if !config.music_root.is_dir() {
         anyhow::bail!("music_root is not a directory");
+    }
+
+    let db_path = std::env::var("DATABASE_URL").unwrap();
+    let db_pool = setup_database(&db_path).await.unwrap();
+
+    if args.scan_music {
+        cli::scan_music(&config.music_root, &db_pool).await;
+        return Ok(());
     }
 
     if config.id.is_none() {
@@ -166,6 +182,8 @@ async fn run() -> Result<(), anyhow::Error> {
         return Ok(());
     }
 
+    let music_root = config.music_root.clone();
+
     let bot_args = config.merge(args);
 
     info!("Starting PokeBot!");
@@ -176,9 +194,6 @@ async fn run() -> Result<(), anyhow::Error> {
     let bind_address = bot_args.bind_address.clone();
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
-    let db_path = std::env::var("DATABASE_URL").unwrap();
-    let db_pool = setup_database(&db_path).await.unwrap();
-
     let bot = MasterBot::spawn(
         bot_args,
         db_pool.clone(),
@@ -187,9 +202,13 @@ async fn run() -> Result<(), anyhow::Error> {
     .await;
 
     if webserver_enable {
+        let config_vars = ConfigVars { music_root };
+
         let bot = bot.downgrade();
         tokio::spawn(async move {
-            if let Err(error) = web_server::start(bind_address, bot, db_pool, shutdown_rx).await {
+            if let Err(error) =
+                web_server::start(bind_address, bot, db_pool, config_vars, shutdown_rx).await
+            {
                 error!(%error, "Error in web server");
             }
         });
@@ -254,7 +273,7 @@ pub async fn setup_database(database_url: &str) -> anyhow::Result<SqlitePool> {
 
     config.custom_setup = Box::new(|url| {
         Box::pin(async move {
-            let mut sync_conn = diesel::SqliteConnection::establish(url)?;
+            let sync_conn = diesel::SqliteConnection::establish(url)?;
             let mut conn = SyncConnectionWrapper::new(sync_conn);
 
             diesel::sql_query("PRAGMA foreign_keys = ON")

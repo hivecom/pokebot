@@ -89,7 +89,7 @@ pub enum AudioLocation {
 
 pub struct MusicBot {
     name: String,
-    music_root: Option<PathBuf>,
+    music_root: PathBuf,
     identity: Identity,
     player: AudioPlayer,
     teamspeak: Option<TeamSpeakConnection>,
@@ -101,7 +101,7 @@ pub struct MusicBot {
 
 pub struct MusicBotArgs {
     pub name: String,
-    pub music_root: Option<PathBuf>,
+    pub music_root: PathBuf,
     pub master: Option<WeakAddress<MasterBot>>,
     pub local: bool,
     pub address: String,
@@ -325,11 +325,7 @@ impl MusicBot {
     pub async fn add_audio(&mut self, location: AudioLocation, user: String) -> anyhow::Result<()> {
         let metadata = match location {
             AudioLocation::Path(rel_path) => {
-                if self.music_root.is_none() {
-                    anyhow::bail!("music_root was not configured");
-                }
-
-                let path = self.music_root.as_ref().unwrap().join(rel_path);
+                let path = self.music_root.join(rel_path);
                 let path = match path.canonicalize() {
                     Ok(p) => p,
                     Err(e) => {
@@ -338,7 +334,7 @@ impl MusicBot {
                 };
 
                 // Make sure files outside of the root path can't be accessed
-                if !path.starts_with(self.music_root.as_ref().unwrap()) || !path.is_file() {
+                if !path.starts_with(&self.music_root) || !path.is_file() {
                     return Err(anyhow!("Invalid path"));
                 }
 
@@ -474,55 +470,53 @@ impl MusicBot {
         .map(OsStr::new)
         .collect::<Vec<_>>();
 
-        if let Some(music_root) = &self.music_root {
-            let mut largest = (None, 0);
+        let mut largest = (None, 0);
 
-            'outer: for entry in WalkDir::new(music_root) {
-                if let Err(e) = entry {
-                    warn!(parent: &self.span, "Failed to access file system entry: {}", e);
-                    continue;
-                }
-                let entry = entry.unwrap();
+        'outer: for entry in WalkDir::new(&self.music_root) {
+            if let Err(e) = entry {
+                warn!(parent: &self.span, "Failed to access file system entry: {}", e);
+                continue;
+            }
+            let entry = entry.unwrap();
 
-                if !entry.file_type().is_file()
-                    || entry
-                        .path()
-                        .extension()
-                        .map(|e| !known_exts.contains(&e))
-                        .unwrap_or(true)
-                {
-                    continue;
-                }
-
-                let rel_path = entry
+            if !entry.file_type().is_file()
+                || entry
                     .path()
-                    .strip_prefix(music_root)
-                    .expect("WalkDir only walks music_dir");
+                    .extension()
+                    .map(|e| !known_exts.contains(&e))
+                    .unwrap_or(true)
+            {
+                continue;
+            }
 
-                let path_str = match rel_path.to_str() {
-                    Some(path) => path,
-                    None => continue,
-                };
+            let rel_path = entry
+                .path()
+                .strip_prefix(&self.music_root)
+                .expect("WalkDir only walks music_dir");
 
-                let mut score = 0;
-                let lowered_path = path_str.to_lowercase();
-                for word in query {
-                    let found = lowered_path.match_indices(&word.to_lowercase()).count();
-                    if found == 0 {
-                        continue 'outer;
-                    }
+            let path_str = match rel_path.to_str() {
+                Some(path) => path,
+                None => continue,
+            };
 
-                    score += found;
+            let mut score = 0;
+            let lowered_path = path_str.to_lowercase();
+            for word in query {
+                let found = lowered_path.match_indices(&word.to_lowercase()).count();
+                if found == 0 {
+                    continue 'outer;
                 }
 
-                if score > largest.1 {
-                    trace!(parent: &self.span, "Found better score {} for {}", score, path_str);
-                    largest = (Some(rel_path.to_path_buf()), score);
-                }
+                score += found;
             }
-            if let Some(path) = largest.0 {
-                return Some(path);
+
+            if score > largest.1 {
+                trace!(parent: &self.span, "Found better score {} for {}", score, path_str);
+                largest = (Some(rel_path.to_path_buf()), score);
             }
+        }
+        if let Some(path) = largest.0 {
+            return Some(path);
         }
 
         None

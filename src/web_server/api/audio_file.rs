@@ -23,6 +23,7 @@ use utoipa::ToSchema;
 
 use crate::db_util::{DbDuration, schema_duration, serialize_duration, unix_timestamp};
 use crate::schema::audio_files;
+use crate::web_server::ConfigVars;
 use crate::web_server::api::Error;
 use crate::web_server::login::{TsToken, uid_by_token};
 use crate::{SqliteConn, SqlitePool};
@@ -122,6 +123,7 @@ pub struct FileForm {
 pub async fn upload(
     TsToken(token): TsToken,
     Extension(pool): Extension<SqlitePool>,
+    Extension(vars): Extension<ConfigVars>,
     mut multipart: Multipart,
 ) -> Result<(StatusCode, Json<UploadResponse>), Error> {
     let mut conn = pool.get().await.expect("can connect to sqlite");
@@ -145,7 +147,7 @@ pub async fn upload(
     let data = data.ok_or(Error::RequiredField("file"))?;
     let file_name = file_name.ok_or(Error::RequiredField("file"))?;
     let metadata = metadata(&data).await?;
-    let file_path = generate_file_path();
+    let file_path = generate_file_path(file_name.split('.').next_back().unwrap_or("mp3"));
 
     let file_id = conn
         .transaction(|conn| {
@@ -164,10 +166,12 @@ pub async fn upload(
                     .await
                     .context("Failed to insert audio file")?;
 
-                fs::create_dir_all(&file_path.parent().unwrap())
+                let mut absolute_path = vars.music_root;
+                absolute_path.push(file_path);
+                fs::create_dir_all(&absolute_path.parent().unwrap())
                     .await
                     .unwrap();
-                fs::write(&file_path, &data).await.unwrap();
+                fs::write(&absolute_path, &data).await.unwrap();
 
                 Ok::<_, anyhow::Error>(file_id)
             }
@@ -181,7 +185,7 @@ pub async fn upload(
     ))
 }
 
-async fn metadata(data: &Bytes) -> Result<SongMetadata, Error> {
+pub async fn metadata(data: &Bytes) -> Result<SongMetadata, Error> {
     let probe = Probe::new(Cursor::new(data))
         .guess_file_type()
         .context("Failed to guess file type")?;
@@ -230,9 +234,9 @@ async fn metadata(data: &Bytes) -> Result<SongMetadata, Error> {
     })
 }
 
-fn generate_file_path() -> PathBuf {
-    let mut file_path = PathBuf::from("songs");
-    file_path.push(format!("{}.{}", uuid::Uuid::new_v4(), "mp3"));
+fn generate_file_path(extension: &str) -> PathBuf {
+    let mut file_path = PathBuf::new();
+    file_path.push(format!("{}.{}", uuid::Uuid::new_v4(), extension));
 
     file_path
 }
