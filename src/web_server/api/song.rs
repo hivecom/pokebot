@@ -4,8 +4,11 @@ use anyhow::Context;
 use axum::extract::Path;
 use axum::extract::rejection::JsonRejection;
 use axum::{Extension, Json};
+use diesel::dsl::sql;
 use diesel::prelude::{Insertable, Queryable};
-use diesel::{ExpressionMethods, NullableExpressionMethods, OptionalExtension, QueryDsl};
+use diesel::{
+    ExpressionMethods, JoinOnDsl, NullableExpressionMethods, OptionalExtension, QueryDsl,
+};
 use diesel_async::scoped_futures::ScopedFutureExt;
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use serde::{Deserialize, Serialize};
@@ -13,6 +16,7 @@ use ts_rs::TS;
 use utoipa::ToSchema;
 
 use crate::db_util::unix_timestamp;
+use crate::schema::favourites;
 use crate::schema::{albums, artists, songs};
 use crate::web_server::api::Error;
 use crate::web_server::api::album::{AlbumFilter, get_or_insert_album};
@@ -48,6 +52,9 @@ pub struct Song {
     #[ts(type = "number")]
     pub file_id: i64,
 
+    #[ts(type = "number")]
+    pub favourite_count: i64,
+
     /// A unix timestamp of when this song was added
     #[schema(example = 1670802822)]
     #[ts(type = "number")]
@@ -73,28 +80,50 @@ impl Ord for Song {
 }
 
 pub async fn songs(conn: &mut SqliteConn, album_filter: AlbumFilter) -> Result<Vec<Song>, Error> {
-    let mut query = songs::table
-        .inner_join(artists::table)
-        .left_join(albums::table)
-        .into_boxed();
-    match album_filter {
-        AlbumFilter::Id(album_id) => query = query.filter(albums::id.eq(album_id)),
-        AlbumFilter::Albumless => query = query.filter(albums::id.is_null()),
-        AlbumFilter::Any => (),
-    }
-    let songs = query
-        .select((
+    let query = songs::table
+        .inner_join(artists::table.on(songs::artist_id.eq(artists::id)))
+        .left_join(albums::table.on(songs::album_id.eq(albums::id.nullable())))
+        .left_join(favourites::table.on(songs::id.eq(favourites::song_id)))
+        .group_by((
             songs::id,
             songs::track,
             songs::title,
             artists::name,
-            albums::title.nullable(),
+            albums::title, // Grouping by albums::title satisfies the nullability check
             songs::file_id,
             songs::created_at,
-        ))
-        .get_results(conn)
-        .await
-        .context("Failed to get songs")?;
+        ));
+    // .group_by((songs::id, artists::name, albums::title));
+
+    let select_clause = (
+        songs::id,
+        songs::track,
+        songs::title,
+        artists::name,
+        albums::title.nullable(),
+        songs::file_id,
+        sql::<diesel::sql_types::BigInt>("COUNT(favourites.id)"),
+        songs::created_at,
+    );
+
+    let songs = match album_filter {
+        AlbumFilter::Id(album_id) => {
+            query
+                .filter(albums::id.eq(album_id))
+                .select(select_clause)
+                .get_results::<Song>(conn)
+                .await
+        }
+        AlbumFilter::Albumless => {
+            query
+                .filter(albums::id.is_null())
+                .select(select_clause)
+                .get_results::<Song>(conn)
+                .await
+        }
+        AlbumFilter::Any => query.select(select_clause).get_results::<Song>(conn).await,
+    }
+    .context("Failed to get songs")?;
 
     Ok(songs)
 }
@@ -184,7 +213,7 @@ pub async fn update_song_metadata(
     //     .await
     //     .context("Failed to update song")?;
 
-    let (id, track, title, created_at) = upsert_song(
+    let song = upsert_song(
         conn,
         &DbSongMetadata {
             track: metadata.track,
@@ -198,22 +227,11 @@ pub async fn update_song_metadata(
     )
     .await?;
 
-    Ok(Song {
-        id,
-        track,
-        title,
-        artist,
-        album,
-        file_id,
-        created_at,
-    })
+    Ok(song)
 }
 
-pub async fn upsert_song(
-    conn: &mut SqliteConn,
-    metadata: &DbSongMetadata,
-) -> Result<(i64, Option<i64>, String, i64), Error> {
-    let res = diesel::insert_into(songs::table)
+pub async fn upsert_song(conn: &mut SqliteConn, metadata: &DbSongMetadata) -> Result<Song, Error> {
+    diesel::insert_into(songs::table)
         .values(metadata)
         .on_conflict(songs::file_id)
         .do_update()
@@ -223,23 +241,41 @@ pub async fn upsert_song(
             songs::artist_id.eq(metadata.artist_id),
             songs::album_id.eq(metadata.album_id),
         ))
-        .returning((songs::id, songs::track, songs::title, songs::created_at))
-        .get_result(conn) // Type <(i64, String)> is inferred
+        .execute(conn) // Type <(i64, String)> is inferred
         .await
         .optional()
         .context("Failed to upsert song metadata")?;
 
-    let res = match res {
-        Some(res) => res,
-        None => songs::table
-            .filter(songs::file_id.eq(metadata.file_id))
-            .select((songs::id, songs::track, songs::title, songs::created_at))
-            .get_result::<(i64, Option<i64>, String, i64)>(conn)
-            .await
-            .context("Failed to get song")?,
-    };
+    let song = songs::table
+        .inner_join(artists::table.on(songs::artist_id.eq(artists::id)))
+        .left_join(albums::table.on(songs::album_id.eq(albums::id.nullable())))
+        .left_join(favourites::table.on(songs::id.eq(favourites::song_id)))
+        .filter(songs::file_id.eq(metadata.file_id))
+        .group_by((
+            songs::id,
+            songs::track,
+            songs::title,
+            artists::name,
+            albums::title, // Grouping by albums::title satisfies the nullability check
+            songs::file_id,
+            songs::created_at,
+        ))
+        .select((
+            songs::id,
+            songs::track,
+            songs::title,
+            artists::name,
+            albums::title.nullable(),
+            songs::file_id,
+            sql::<diesel::sql_types::BigInt>("COUNT(favourites.id)"),
+            songs::created_at,
+        ))
+        .get_result::<Song>(conn)
+        .await
+        .context("Failed to get updated song")?;
+    // .group_by((songs::id, artists::name, albums::title));
 
-    Ok(res)
+    Ok(song)
 }
 
 async fn get_or_insert_artist(

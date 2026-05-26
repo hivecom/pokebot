@@ -1,0 +1,9 @@
+diesel::allow_columns_to_appear_in_same_group_by_clause!(
+    crate::schema::songs::id,
+    crate::schema::songs::track,
+    crate::schema::songs::title,
+    crate::schema::songs::file_id,
+    crate::schema::songs::created_at,
+    crate::schema::artists::name,
+    crate::schema::albums::title,
+);
