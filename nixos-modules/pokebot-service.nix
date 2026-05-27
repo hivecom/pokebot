@@ -44,6 +44,14 @@ in {
         description = "Pokebot package";
       };
 
+      logLevel = mkOption {
+        type = types.str;
+        default = "debug";
+        description = ''
+          Rust log level: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#example-syntax
+        '';
+      };
+
       user = mkOption {
         default = defaultUser;
         example = "john";
@@ -211,6 +219,7 @@ in {
       wants = ["network-online.target"];
       description = "TeamSpeak 3 Music Bot";
       environment = {
+        RUST_LOG = cfg.logLevel;
         WEB_ROOT = "${cfg.package}/share/pokebot";
         DATABASE_URL = cfg.webserver.databasePath;
       };
