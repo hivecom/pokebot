@@ -55,7 +55,7 @@ pub async fn get_currently_playing(
 #[ts(export, export_to = "../web_server-types/")]
 pub struct PlaySong {
     #[ts(type = "number")]
-    pub id: i64,
+    pub file_id: i64,
     // TODO: allow any playlist position
 }
 
@@ -76,11 +76,10 @@ pub async fn post_currently_playing(
 ) -> Result<(StatusCode, Json<AudioMetadata>), Error> {
     let mut conn = pool.get().await.expect("can connect to sqlite");
 
-    let Json(PlaySong { id }) = req?;
+    let Json(PlaySong { file_id }) = req?;
 
     let file_path: String = audio_files::table
-        .inner_join(songs::table)
-        .filter(songs::id.eq(id))
+        .filter(audio_files::id.eq(file_id))
         .select(audio_files::file_path)
         .get_result(&mut conn)
         .await
