@@ -4,7 +4,6 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use diesel::Connection;
-use diesel::connection::Instrumentation;
 use diesel_async::pooled_connection::{AsyncDieselConnectionManager, ManagerConfig, deadpool};
 use diesel_async::sync_connection_wrapper::SyncConnectionWrapper;
 use diesel_async::{AsyncMigrationHarness, RunQueryDsl};
@@ -15,7 +14,7 @@ use structopt::clap::AppSettings;
 use tokio::signal::unix::*;
 use tokio::sync::oneshot;
 use tracing::level_filters::LevelFilter;
-use tracing::{Level, span, trace};
+use tracing::{Level, span};
 use tracing::{debug, error, info};
 use tracing_subscriber::EnvFilter;
 use tsclientlib::Identity;

@@ -166,14 +166,13 @@ pub struct PutState {
 pub async fn post_bot(
     Extension(bot): Extension<WeakAddress<MasterBot>>,
     TsToken(token): TsToken,
-) -> Result<Json<BotData>, Error> {
-    let bot_data = bot
-        .send(CreateBotRequest { token })
+) -> Result<Json<()>, Error> {
+    bot.send(CreateBotRequest { token })
         .await
         .unwrap()
         .context("Failed to get bot data")?;
 
-    Ok(Json(bot_data))
+    Ok(Json(()))
 }
 
 /// Put new bot state update

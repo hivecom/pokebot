@@ -195,23 +195,9 @@ pub async fn update_song_metadata(
     file_id: i64,
     metadata: PutSongMetadata,
 ) -> Result<Song, Error> {
-    let (artist_id, artist) = get_or_insert_artist(conn, uid, &metadata.artist).await?;
-    let (album_id, album) =
-        get_or_insert_album(conn, uid, artist_id, &metadata.cover_path, &metadata.album)
-            .await?
-            .unzip();
-
-    // let (song_id, song_track, song_title, song_created_at) = diesel::update(songs::table)
-    //     .set(SongMetadataChanges {
-    //         track: metadata.track,
-    //         title: metadata.title,
-    //         artist_id,
-    //         album_id,
-    //     })
-    //     .returning((songs::id, songs::track, songs::title, songs::created_at))
-    //     .get_result::<(i64, Option<i64>, String, i64)>(conn)
-    //     .await
-    //     .context("Failed to update song")?;
+    let artist_id = get_or_insert_artist(conn, uid, &metadata.artist).await?;
+    let album_id =
+        get_or_insert_album(conn, uid, artist_id, &metadata.cover_path, &metadata.album).await?;
 
     let song = upsert_song(
         conn,
@@ -282,34 +268,34 @@ async fn get_or_insert_artist(
     conn: &mut SqliteConn,
     uid: &str,
     artist: &String,
-) -> Result<(i64, String), Error> {
+) -> Result<i64, Error> {
     Ok(conn
         .transaction(|conn| {
             async {
                 let existing = artists::table
                     .filter(artists::name.eq(artist))
-                    .select((artists::id, artists::name))
+                    .select(artists::id)
                     .get_result(conn) // Type <(i64, String)> is inferred
                     .await
                     .optional()
                     .context("Failed to get artist")?;
 
-                if let Some((id, name)) = existing {
-                    return Ok((id, name));
+                if let Some(id) = existing {
+                    return Ok(id);
                 }
 
-                let (id, name) = diesel::insert_into(artists::table)
+                let id = diesel::insert_into(artists::table)
                     .values((
                         artists::name.eq(artist),
                         artists::created_at.eq(unix_timestamp()),
                         artists::created_by.eq(uid),
                     ))
-                    .returning((artists::id, artists::name))
+                    .returning(artists::id)
                     .get_result(conn)
                     .await
                     .context("Failed to insert artist")?;
 
-                Ok::<_, anyhow::Error>((id, name))
+                Ok::<_, anyhow::Error>(id)
             }
             .scope_boxed()
         })

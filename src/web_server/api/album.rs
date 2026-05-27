@@ -142,7 +142,7 @@ pub async fn get_or_insert_album(
     artist_id: i64,
     cover_path: &Option<String>,
     album: &Option<String>,
-) -> Result<Option<(i64, String)>, Error> {
+) -> Result<Option<i64>, Error> {
     let res = if let Some(album) = album {
         let res = diesel::insert_into(albums::table)
             .values((
@@ -154,7 +154,7 @@ pub async fn get_or_insert_album(
             ))
             .on_conflict(albums::title)
             .do_nothing()
-            .returning((albums::id, albums::title))
+            .returning(albums::id)
             .get_result(conn)
             .await
             .optional()
@@ -164,8 +164,8 @@ pub async fn get_or_insert_album(
             Some(res) => res,
             None => albums::table
                 .filter(albums::title.eq(album))
-                .select((albums::id, albums::title))
-                .get_result::<(i64, String)>(conn)
+                .select(albums::id)
+                .get_result::<i64>(conn)
                 .await
                 .context("Failed to get album")?,
         };

@@ -1,6 +1,6 @@
 use anyhow::Context;
 use axum::{
-    Extension, Form, Json,
+    Extension, Json,
     body::Body,
     extract::{FromRequestParts, rejection::ExtensionRejection},
     http::{Response, StatusCode},
@@ -55,7 +55,12 @@ pub async fn token(
     Extension(bot): Extension<WeakAddress<MasterBot>>,
     Json(login): Json<Login>,
 ) -> Result<Json<bool>, Error> {
-    if let Ok(uid) = bot.send(LoginRequest(login.token.clone())).await.unwrap() {
+    if bot
+        .send(LoginRequest(login.token.clone()))
+        .await
+        .unwrap()
+        .is_ok()
+    {
         Ok(Json(true))
     } else {
         Ok(Json(false))

@@ -1,4 +1,4 @@
-use anyhow::{Error, anyhow};
+use anyhow::anyhow;
 use async_trait::async_trait;
 
 use xtra::{Context, Handler, Message};
@@ -6,6 +6,7 @@ use xtra::{Context, Handler, Message};
 use crate::bot::{ApiCommand, MasterBot};
 use crate::command::Command;
 use crate::web_server::BotData;
+use crate::web_server::api::error::Error;
 
 pub struct BotDataRequest {
     pub token: String,
@@ -69,7 +70,7 @@ impl Handler<CommandRequest> for MasterBot {
             .unwrap();
             Ok(())
         } else {
-            Err(anyhow!("no bot in your channel"))
+            Err(anyhow!("no bot in your channel").into())
         }
     }
 }
@@ -79,7 +80,7 @@ pub struct CreateBotRequest {
 }
 
 impl Message for CreateBotRequest {
-    type Result = Option<BotData>;
+    type Result = Result<(), Error>;
 }
 
 #[async_trait]
@@ -88,11 +89,14 @@ impl Handler<CreateBotRequest> for MasterBot {
         &mut self,
         CreateBotRequest { token }: CreateBotRequest,
         _: &mut Context<Self>,
-    ) -> Option<BotData> {
-        let client = self.client_by_user_token(&token).await?;
+    ) -> Result<(), Error> {
+        let client = self
+            .client_by_user_token(&token)
+            .await
+            .ok_or(Error::NotFound)?;
 
-        self.spawn_bot_for_client(client.id).await.ok()?;
+        self.spawn_bot_for_client(client.id).await?;
 
-        self.bot_data(&token).await
+        Ok(())
     }
 }
