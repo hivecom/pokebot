@@ -43,7 +43,7 @@ impl AudioMetadata {
         format!(
             "{}{}",
             self.title,
-            self.album
+            self.artist
                 .as_ref()
                 .map(|a| format!(" - {a}"))
                 .unwrap_or_default()
