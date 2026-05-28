@@ -16,6 +16,11 @@ use lofty::picture::PictureType;
 use lofty::probe::Probe;
 use lofty::tag::Accessor;
 use serde::Serialize;
+use symphonia::core::formats::FormatOptions;
+use symphonia::core::formats::probe::Hint;
+use symphonia::core::io::MediaSourceStream;
+use symphonia::core::meta::{MetadataOptions, StandardTag};
+use symphonia::core::units::{Time, Timestamp};
 use tokio::fs::{self, File};
 use tokio::io::AsyncWriteExt;
 use ts_rs::TS;
@@ -189,7 +194,10 @@ pub async fn metadata(data: &Bytes) -> Result<SongMetadata, Error> {
     let probe = Probe::new(Cursor::new(data))
         .guess_file_type()
         .context("Failed to guess file type")?;
-    let file = probe.read().context("Failed to read song for tags")?;
+    let Ok(file) = probe.read() else {
+        return metadata_fallback(data);
+    };
+
     if let Some(tag) = file.primary_tag() {
         let mut cover = None;
         for picture in tag.pictures() {
@@ -239,6 +247,61 @@ pub async fn metadata(data: &Bytes) -> Result<SongMetadata, Error> {
             duration: file.properties().duration(),
         })
     }
+}
+
+fn metadata_fallback(data: &Bytes) -> Result<SongMetadata, Error> {
+    let mss = MediaSourceStream::new(Box::new(Cursor::new(data)), Default::default());
+
+    let mut probed = symphonia::default::get_probe()
+        .probe(
+            &Hint::new(),
+            mss,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )
+        .context("Failed to probe")?;
+
+    let mut title = None;
+    let mut artist = None;
+    let mut duration: Option<Duration> = None;
+
+    if let Some(track) = probed.tracks().iter().find(|t| {
+        t.codec_params
+            .as_ref()
+            .map(|c| c.is_audio())
+            .unwrap_or(false)
+    }) {
+        duration = track
+            .time_base
+            .zip(track.duration)
+            .map(|(base, dur)| {
+                base.calc_time(Timestamp::ZERO.saturating_add(dur))
+                    .unwrap_or(Time::ZERO)
+            })
+            .map(|t| Duration::from_millis(t.as_millis() as u64))
+            .filter(|d| !d.is_zero());
+    }
+
+    if let Some(metadata_rev) = probed.metadata().current() {
+        for tag in &metadata_rev.media.tags {
+            if let Some(std) = &tag.std {
+                match std {
+                    StandardTag::TrackTitle(t) => title = Some((**t).clone()),
+                    StandardTag::Artist(a) => artist = Some((**a).clone()),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    Ok(SongMetadata {
+        track: None,
+        title,
+        artist,
+        album: None,
+        cover_path: None,
+        duration: duration.ok_or(anyhow!("Failed to find duration"))?,
+    })
 }
 
 fn generate_file_path(extension: &str) -> PathBuf {

@@ -14,7 +14,7 @@ use xtra::WeakAddress;
 
 use crate::command::{Command, Seek, VolumeChange};
 use crate::db_util::{deserialize_opt_duration, schema_opt_duration};
-use crate::schema::{audio_files, songs};
+use crate::schema::audio_files;
 use crate::web_server::{BotData, BotDataRequest, CommandRequest, ConfigVars, CreateBotRequest};
 use crate::youtube_dl::AudioMetadata;
 use crate::{MasterBot, SqlitePool};

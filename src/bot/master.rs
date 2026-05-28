@@ -275,27 +275,6 @@ impl MasterBot {
         bot.send(GetBotData).await.ok()
     }
 
-    pub async fn bot_datas(&self) -> Vec<crate::web_server::BotData> {
-        let len = self.connected_bots.len();
-        let mut result = Vec::with_capacity(len);
-        for bot in self.connected_bots.values() {
-            let bot_data = bot.send(GetBotData).await.unwrap();
-            result.push(bot_data);
-        }
-
-        result
-    }
-
-    pub fn bot_names(&self) -> Vec<String> {
-        let len = self.connected_bots.len();
-        let mut result = Vec::with_capacity(len);
-        for name in self.connected_bots.keys() {
-            result.push(name.clone());
-        }
-
-        result
-    }
-
     pub async fn client_by_user_token(&mut self, token: &str) -> Option<Client> {
         if self.config.local {
             return Some(default_client());
