@@ -265,22 +265,16 @@ fn metadata_fallback(data: &Bytes) -> Result<SongMetadata, Error> {
     let mut artist = None;
     let mut duration: Option<Duration> = None;
 
-    if let Some(track) = probed.tracks().iter().find(|t| {
-        t.codec_params
-            .as_ref()
-            .map(|c| c.is_audio())
-            .unwrap_or(false)
-    }) {
-        duration = track
-            .time_base
-            .zip(track.duration)
-            .map(|(base, dur)| {
-                base.calc_time(Timestamp::ZERO.saturating_add(dur))
-                    .unwrap_or(Time::ZERO)
-            })
-            .map(|t| Duration::from_millis(t.as_millis() as u64))
-            .filter(|d| !d.is_zero());
-    }
+    let media_info = probed.media_info();
+    duration = media_info
+        .time_base
+        .zip(media_info.duration)
+        .map(|(base, dur)| {
+            base.calc_time(Timestamp::ZERO.saturating_add(dur))
+                .unwrap_or(Time::ZERO)
+        })
+        .map(|t| Duration::from_millis(t.as_millis() as u64))
+        .filter(|d| !d.is_zero());
 
     if let Some(metadata_rev) = probed.metadata().current() {
         for tag in &metadata_rev.media.tags {
