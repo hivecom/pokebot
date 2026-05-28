@@ -1,7 +1,8 @@
 {
   description = "TeamSpeak 3 Music Bot";
   inputs = {
-    nixpkgs.url = "nixpkgs/nixos-unstable";
+    # https://nixpk.gs/pr-tracker.html?pr=524985
+    nixpkgs.url = "nixpkgs/nixos-unstable-small";
   };
 
   outputs = {
