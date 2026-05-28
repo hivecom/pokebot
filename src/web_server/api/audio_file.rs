@@ -190,48 +190,55 @@ pub async fn metadata(data: &Bytes) -> Result<SongMetadata, Error> {
         .guess_file_type()
         .context("Failed to guess file type")?;
     let file = probe.read().context("Failed to read song for tags")?;
-    let tag = file
-        .primary_tag()
-        .ok_or_else(|| anyhow!("file does not contain metadata or filetype is unknown"))?;
-
-    let mut cover = None;
-    for picture in tag.pictures() {
-        if picture.pic_type() == PictureType::CoverFront {
-            // The image type might be wrong but it does not seem like the big browsers
-            // care so finding the correct type does not seem like it is worth the effort.
-            cover = Some(picture.data());
+    if let Some(tag) = file.primary_tag() {
+        let mut cover = None;
+        for picture in tag.pictures() {
+            if picture.pic_type() == PictureType::CoverFront {
+                // The image type might be wrong but it does not seem like the big browsers
+                // care so finding the correct type does not seem like it is worth the effort.
+                cover = Some(picture.data());
+            }
         }
+
+        let track = tag.track().map(|i| i as i64);
+        let title = tag.title().map(|t| t.to_string());
+        let artist = tag.artist().map(|a| a.to_string());
+        let album = tag.album().map(|a| a.to_string());
+
+        let cover_path = match cover {
+            Some(cover) => {
+                let cover_path = generate_cover_path();
+                let mut file = File::create_new(&cover_path)
+                    .await
+                    .context("Failed to create cover image")?;
+                file.write(cover)
+                    .await
+                    .context("Failed to create cover image")?;
+
+                // FIXME: not great to use lossy on a path but it should be fine since it's just a uuid
+                Some(cover_path.to_string_lossy().to_string())
+            }
+            None => None,
+        };
+
+        Ok(SongMetadata {
+            track,
+            title,
+            artist,
+            album,
+            cover_path,
+            duration: file.properties().duration(),
+        })
+    } else {
+        Ok(SongMetadata {
+            track: None,
+            title: None,
+            artist: None,
+            album: None,
+            cover_path: None,
+            duration: file.properties().duration(),
+        })
     }
-
-    let track = tag.track().map(|i| i as i64);
-    let title = tag.title().map(|t| t.to_string());
-    let artist = tag.artist().map(|a| a.to_string());
-    let album = tag.album().map(|a| a.to_string());
-
-    let cover_path = match cover {
-        Some(cover) => {
-            let cover_path = generate_cover_path();
-            let mut file = File::create_new(&cover_path)
-                .await
-                .context("Failed to create cover image")?;
-            file.write(cover)
-                .await
-                .context("Failed to create cover image")?;
-
-            // FIXME: not great to use lossy on a path but it should be fine since it's just a uuid
-            Some(cover_path.to_string_lossy().to_string())
-        }
-        None => None,
-    };
-
-    Ok(SongMetadata {
-        track,
-        title,
-        artist,
-        album,
-        cover_path,
-        duration: file.properties().duration(),
-    })
 }
 
 fn generate_file_path(extension: &str) -> PathBuf {
