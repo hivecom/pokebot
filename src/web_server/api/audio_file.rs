@@ -55,7 +55,7 @@ pub struct AudioFile {
 #[derive(Debug, Default, Serialize, TS, ToSchema)]
 #[ts(export, export_to = "../web_server-types/")]
 pub struct SongMetadata {
-    #[ts(type = "number")]
+    #[ts(type = "number | null")]
     pub track: Option<i64>,
     pub title: Option<String>,
     pub artist: Option<String>,
