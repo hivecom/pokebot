@@ -240,28 +240,24 @@ impl MasterBot {
                     );
                     self.spawn_bot_for_client(user).await?;
                 }
-                MessageTarget::Client(_) => {
-                    if message.text == "auth" {
-                        let token = petname::Petnames::default()
-                            .generate_one(5, "-")
-                            .expect("no names");
-                        let uid = message.invoker.uid.unwrap();
+                MessageTarget::Client(_) if message.text == "auth" => {
+                    let token = petname::Petnames::large()
+                        .generate_one(5, "-")
+                        .expect("no names");
+                    let uid = message.invoker.uid.unwrap();
 
-                        let mut conn = self.db_pool.get().await.expect("can connect to sqlite");
-                        insert_web_token(&mut conn, &token, &uid.to_string()).await?;
-                        self.teamspeak
-                            .send_message_to_user(message.invoker.id, token)
-                            .await?;
-                    }
+                    let mut conn = self.db_pool.get().await.expect("can connect to sqlite");
+                    insert_web_token(&mut conn, &token, &uid.to_string()).await?;
+                    self.teamspeak
+                        .send_message_to_user(message.invoker.id, token)
+                        .await?;
                 }
                 _ => (),
             },
-            MusicBotMessage::ClientAdded(id) => {
-                if id == self.teamspeak.my_id().await? {
-                    self.teamspeak
-                        .set_description(String::from("Poke me if you want a music bot!"))
-                        .await;
-                }
+            MusicBotMessage::ClientAdded(id) if id == self.teamspeak.my_id().await? => {
+                self.teamspeak
+                    .set_description(String::from("Poke me if you want a music bot!"))
+                    .await;
             }
             _ => (),
         }

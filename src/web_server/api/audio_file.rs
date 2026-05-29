@@ -263,10 +263,9 @@ fn metadata_fallback(data: &Bytes) -> Result<SongMetadata, Error> {
 
     let mut title = None;
     let mut artist = None;
-    let mut duration: Option<Duration> = None;
 
     let media_info = probed.media_info();
-    duration = media_info
+    let duration = media_info
         .time_base
         .zip(media_info.duration)
         .map(|(base, dur)| {

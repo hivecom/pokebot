@@ -534,11 +534,10 @@ impl MusicBot {
 
     async fn on_message(&mut self, message: MusicBotMessage) -> anyhow::Result<()> {
         match message {
-            MusicBotMessage::TextMessage(message) => {
-                if MessageTarget::Channel == message.target {
-                    self.on_text(message).await?;
-                }
+            MusicBotMessage::TextMessage(message) if MessageTarget::Channel == message.target => {
+                self.on_text(message).await?;
             }
+            MusicBotMessage::TextMessage(message) => {}
             MusicBotMessage::ClientChannel {
                 client,
                 old_channel,

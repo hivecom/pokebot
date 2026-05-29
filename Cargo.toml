@@ -11,54 +11,54 @@ tsclientlib = { git = "https://github.com/ReSpeak/tsclientlib", features = [
   "unstable",
 ] }
 tsproto-packets = { git = "https://github.com/ReSpeak/tsclientlib" }
-toml = "0.5.8"
-structopt = "0.3.22"
-humantime = "2.1.0"
-anyhow = "1.0.42"
+toml = "1.1.2"
+structopt = "0.3.26"
+humantime = "2.3.0"
+anyhow = "1.0.102"
 
-tokio = { version = "1.9.0", features = [
+tokio = { version = "1.52.3", features = [
   "rt-multi-thread",
   "process",
   "io-std",
   "macros",
   "signal",
 ] }
-futures = "0.3.16"
+futures = "0.3.32"
 # git version for async Actor trait
 #xtra = { git = "https://github.com/Restioson/xtra", features = ["with-tokio-0_2"] }
-xtra = { version = "0.5.1", features = ["with-tokio-1"] }
-async-trait = "0.1.51"
+xtra = { version = "0.5.2", features = ["with-tokio-1"] }
+async-trait = "0.1.89"
 
-glib = "0.14.2"
-gstreamer = "0.17.1"
-gstreamer-app = "0.17.0"
-gstreamer-audio = "0.17.0"
+glib = "0.14.8"
+gstreamer = "0.17.4"
+gstreamer-app = "0.17.2"
+gstreamer-audio = "0.17.2"
 
-base64 = "0.13.0"
-walkdir = "2.3.2"
+base64 = "0.13.1"
+walkdir = "2.5.0"
 
-serde = "1.0.127"
-serde_json = "1.0.66"
-rand = { version = "0.8.4", features = ["small_rng"] }
-derive_more = "0.99.16"
+serde = "1.0.228"
+serde_json = "1.0.150"
+rand = { version = "0.8.6", features = ["small_rng"] }
+derive_more = "0.99.20"
 
-axum = { version = "0.8.3", features = ["macros", "multipart"] }
+axum = { version = "0.8.9", features = ["macros", "multipart"] }
 askama = "0.14.0"
-tower-http = { version = "0.6.2", features = ["cors", "fs", "trace"] }
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-tracing = "0.1.41"
+tower-http = { version = "0.6.11", features = ["cors", "fs", "trace"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+tracing = "0.1.44"
 tracing-slog = "0.3.0"
 cookie = { version = "0.18.1", features = ["percent-encode"] }
 tower-cookies = "0.11.0"
 petname = "2.0.2"
 lofty = "0.22.4"
-thiserror = "2.0.12"
+thiserror = "2.0.18"
 r2d2 = "0.8.10"
-diesel = { version = "2.2.10", features = ["sqlite", "returning_clauses_for_sqlite_3_35", "r2d2"] }
-diesel_migrations = { version = "2.3.1", features = ["sqlite"] }
+diesel = { version = "2.3.9", features = ["sqlite", "returning_clauses_for_sqlite_3_35", "r2d2"] }
+diesel_migrations = { version = "2.3.2", features = ["sqlite"] }
 dotenv = "0.15.0"
 diesel-async = { version = "0.8.0", features = ["deadpool", "migrations", "sqlite", "tokio"] }
-utoipa = { version = "5.4.0", features = ["axum_extras", "openapi_extensions"] }
+utoipa = { version = "5.5.0", features = ["axum_extras", "openapi_extensions"] }
 utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
 ts-rs = "12.0.1"
 axum-extra = { version = "0.12.6", features = ["typed-header"] }
