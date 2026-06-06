@@ -64,3 +64,4 @@ ts-rs = "12.0.1"
 axum-extra = { version = "0.12.6", features = ["typed-header"] }
 uuid = { version = "1.23.1", features = ["v4"] }
 symphonia = { version = "0.6.0", features = ["mkv", "mp3"] }
+itertools = "0.14.0"

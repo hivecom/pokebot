@@ -5,6 +5,7 @@ use axum::{Extension, Json};
 use diesel::prelude::Queryable;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl};
 use diesel_async::RunQueryDsl;
+use itertools::Itertools;
 use serde::Serialize;
 use ts_rs::TS;
 use utoipa::ToSchema;
@@ -14,8 +15,6 @@ use crate::schema::{albums, artists};
 use crate::web_server::api::Error;
 use crate::web_server::api::song::{Song, songs};
 use crate::{SqliteConn, SqlitePool};
-
-const DEFAULT_ARTIST: &str = "Unknown Artist";
 
 /// The definition of an album.
 #[derive(Debug, Serialize, TS, ToSchema, Queryable, Eq)]
@@ -105,16 +104,18 @@ pub async fn albums(conn: &mut SqliteConn) -> Result<Vec<Album>, Error> {
     }
     let albumless_songs = songs(conn, AlbumFilter::Albumless).await?;
     if !albumless_songs.is_empty() {
-        albums.push(Album {
-            metadata: AlbumMetadata {
-                id: -1,
-                title: String::from("No Album"),
-                artist: String::from(DEFAULT_ARTIST),
-                cover: None,
-                created_at: 0,
-            },
-            songs: albumless_songs,
-        });
+        for (artist, artist_songs) in &albumless_songs.into_iter().chunk_by(|s| s.artist.clone()) {
+            albums.push(Album {
+                metadata: AlbumMetadata {
+                    id: -1,
+                    title: String::from("No Album"),
+                    artist: artist.to_owned(),
+                    cover: None,
+                    created_at: 0,
+                },
+                songs: artist_songs.into_iter().collect(),
+            });
+        }
     }
 
     albums.sort();

@@ -2576,6 +2576,7 @@ dependencies = [
  "gstreamer-app",
  "gstreamer-audio",
  "humantime",
+ "itertools 0.14.0",
  "lofty",
  "petname",
  "r2d2",
