@@ -380,30 +380,6 @@ impl MusicBot {
             if let Some(request) = self.playlist.pop() {
                 self.start_playing_audio(request).await?;
             }
-        } else {
-            let duration = if let Some(duration) = metadata.duration {
-                format!(" ({})", ts::bold(&humantime::format_duration(duration)))
-            } else {
-                String::new()
-            };
-
-            let msg = if metadata.uri.starts_with(FILE_PREFIX) {
-                format!(
-                    "Added local file {}{} to playlist",
-                    ts::underline(&metadata.full_title()),
-                    duration
-                )
-            } else {
-                format!(
-                    "Added {}{} to playlist",
-                    ts::underline(&metadata.full_title()),
-                    duration
-                )
-            };
-
-            if let Err(e) = self.send_message(msg).await {
-                error!(parent: &self.span, "Failed to send message: {}", e);
-            }
         }
 
         Ok(())
@@ -436,21 +412,6 @@ impl MusicBot {
             String::new()
         };
 
-        let msg = if metadata.uri.starts_with(FILE_PREFIX) {
-            format!(
-                "Playing local file {} {}",
-                ts::underline(&metadata.full_title()),
-                duration
-            )
-        } else {
-            format!(
-                "Playing {} {}",
-                ts::underline(&metadata.full_title()),
-                duration
-            )
-        };
-
-        self.send_message(msg).await?;
         self.set_description(format!("Currently playing '{}'", metadata.full_title()))
             .await;
         self.player.reset().unwrap();
