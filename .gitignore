@@ -10,3 +10,6 @@ result
 
 covers
 songs
+
+.env
+*.db
