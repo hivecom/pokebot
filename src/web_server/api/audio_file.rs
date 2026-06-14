@@ -67,6 +67,9 @@ pub struct SongMetadata {
     pub album: Option<String>,
     pub cover_path: Option<String>,
 
+    #[ts(type = "number | null")]
+    pub disc_number: Option<i64>,
+
     /// The duration of the song in milliseconds
     #[schema(example = 170)]
     #[serde(serialize_with = "serialize_duration")]
@@ -212,6 +215,7 @@ pub async fn metadata(data: &Bytes) -> Result<SongMetadata, Error> {
         let title = tag.title().map(|t| t.to_string());
         let artist = tag.artist().map(|a| a.to_string());
         let album = tag.album().map(|a| a.to_string());
+        let disc_number = tag.disk().map(|d| d as i64);
 
         let cover_path = match cover {
             Some(cover) => {
@@ -235,6 +239,7 @@ pub async fn metadata(data: &Bytes) -> Result<SongMetadata, Error> {
             artist,
             album,
             cover_path,
+            disc_number,
             duration: file.properties().duration(),
         })
     } else {
@@ -244,6 +249,7 @@ pub async fn metadata(data: &Bytes) -> Result<SongMetadata, Error> {
             artist: None,
             album: None,
             cover_path: None,
+            disc_number: None,
             duration: file.properties().duration(),
         })
     }
@@ -261,8 +267,11 @@ fn metadata_fallback(data: &Bytes) -> Result<SongMetadata, Error> {
         )
         .context("Failed to probe")?;
 
+    let mut track = None;
     let mut title = None;
     let mut artist = None;
+    let mut album = None;
+    let mut disc_number = None;
 
     let media_info = probed.media_info();
     let duration = media_info
@@ -279,8 +288,11 @@ fn metadata_fallback(data: &Bytes) -> Result<SongMetadata, Error> {
         for tag in &metadata_rev.media.tags {
             if let Some(std) = &tag.std {
                 match std {
+                    StandardTag::TrackNumber(t) => track = Some(*t as i64),
                     StandardTag::TrackTitle(t) => title = Some((**t).clone()),
                     StandardTag::Artist(a) => artist = Some((**a).clone()),
+                    StandardTag::Album(a) => album = Some((**a).clone()),
+                    StandardTag::DiscNumber(d) => disc_number = Some(*d as i64),
                     _ => {}
                 }
             }
@@ -288,11 +300,12 @@ fn metadata_fallback(data: &Bytes) -> Result<SongMetadata, Error> {
     }
 
     Ok(SongMetadata {
-        track: None,
+        track,
         title,
         artist,
-        album: None,
+        album,
         cover_path: None,
+        disc_number,
         duration: duration.ok_or(anyhow!("Failed to find duration"))?,
     })
 }

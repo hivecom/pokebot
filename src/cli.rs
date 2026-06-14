@@ -66,6 +66,7 @@ pub async fn scan_music(music_root: &Path, pool: &SqlitePool) {
                                 artist,
                                 album: metadata.album,
                                 cover_path: metadata.cover_path,
+                                disc_number: metadata.disc_number,
                             },
                         )
                         .await

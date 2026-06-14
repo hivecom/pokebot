@@ -82,6 +82,7 @@ diesel::table! {
         file_id -> Integer,
         created_at -> Integer,
         created_by -> Text,
+        disc_number -> Nullable<Integer>,
     }
 }
 

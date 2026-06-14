@@ -6,4 +6,5 @@ diesel::allow_columns_to_appear_in_same_group_by_clause!(
     crate::schema::songs::created_at,
     crate::schema::artists::name,
     crate::schema::albums::title,
+    crate::schema::songs::disc_number,
 );

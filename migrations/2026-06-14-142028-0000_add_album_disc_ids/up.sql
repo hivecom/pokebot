@@ -1,0 +1,1 @@
+ALTER TABLE songs ADD COLUMN "disc_number" INTEGER NULL;

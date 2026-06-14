@@ -19,7 +19,11 @@ artist: string,
 /**
  * The creator of the song
  */
-album: string | null, file_id: number, favourite_count: number, 
+album: string | null, 
+/**
+ * The disc of the album
+ */
+disc_number: number | null, file_id: number, favourite_count: number, 
 /**
  * A unix timestamp of when this song was added
  */

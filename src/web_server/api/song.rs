@@ -5,7 +5,7 @@ use axum::extract::Path;
 use axum::extract::rejection::JsonRejection;
 use axum::{Extension, Json};
 use diesel::dsl::sql;
-use diesel::prelude::{Insertable, Queryable};
+use diesel::prelude::{Insertable, Queryable, QueryableByName};
 use diesel::{
     ExpressionMethods, JoinOnDsl, NullableExpressionMethods, OptionalExtension, QueryDsl,
 };
@@ -47,6 +47,10 @@ pub struct Song {
     /// The creator of the song
     #[schema(example = "Album")]
     pub album: Option<String>,
+
+    /// The disc of the album
+    #[ts(type = "number | null")]
+    pub disc_number: Option<i64>,
 
     #[schema(example = 1)]
     #[ts(type = "number")]
@@ -90,6 +94,7 @@ pub async fn songs(conn: &mut SqliteConn, album_filter: AlbumFilter) -> Result<V
             songs::title,
             artists::name,
             albums::title, // Grouping by albums::title satisfies the nullability check
+            songs::disc_number,
             songs::file_id,
             songs::created_at,
         ));
@@ -101,6 +106,7 @@ pub async fn songs(conn: &mut SqliteConn, album_filter: AlbumFilter) -> Result<V
         songs::title,
         artists::name,
         albums::title.nullable(),
+        songs::disc_number,
         songs::file_id,
         sql::<diesel::sql_types::BigInt>("COUNT(favourites.id)"),
         songs::created_at,
@@ -150,6 +156,8 @@ pub struct PutSongMetadata {
     pub title: String,
     pub artist: String,
     pub album: Option<String>,
+    #[ts(type = "number | null")]
+    pub disc_number: Option<i64>,
     pub cover_path: Option<String>,
 }
 
@@ -184,6 +192,7 @@ pub struct DbSongMetadata {
     title: String,
     artist_id: i64,
     album_id: Option<i64>,
+    disc_number: Option<i64>,
     file_id: i64,
     created_at: i64,
     created_by: String,
@@ -206,6 +215,7 @@ pub async fn update_song_metadata(
             title: metadata.title,
             artist_id,
             album_id,
+            disc_number: metadata.disc_number,
             file_id,
             created_at: unix_timestamp(),
             created_by: uid.to_owned(),
@@ -226,6 +236,7 @@ pub async fn upsert_song(conn: &mut SqliteConn, metadata: &DbSongMetadata) -> Re
             songs::title.eq(&metadata.title),
             songs::artist_id.eq(metadata.artist_id),
             songs::album_id.eq(metadata.album_id),
+            songs::disc_number.eq(metadata.disc_number),
         ))
         .execute(conn) // Type <(i64, String)> is inferred
         .await
@@ -243,6 +254,7 @@ pub async fn upsert_song(conn: &mut SqliteConn, metadata: &DbSongMetadata) -> Re
             songs::title,
             artists::name,
             albums::title, // Grouping by albums::title satisfies the nullability check
+            songs::disc_number,
             songs::file_id,
             songs::created_at,
         ))
@@ -252,6 +264,7 @@ pub async fn upsert_song(conn: &mut SqliteConn, metadata: &DbSongMetadata) -> Re
             songs::title,
             artists::name,
             albums::title.nullable(),
+            songs::disc_number,
             songs::file_id,
             sql::<diesel::sql_types::BigInt>("COUNT(favourites.id)"),
             songs::created_at,
