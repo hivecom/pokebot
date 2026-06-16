@@ -102,9 +102,12 @@ pub async fn albums(conn: &mut SqliteConn) -> Result<Vec<Album>, Error> {
         songs.sort();
         albums.push(Album { songs, metadata })
     }
-    let albumless_songs = songs(conn, AlbumFilter::Albumless).await?;
+    let mut albumless_songs = songs(conn, AlbumFilter::Albumless).await?;
+    albumless_songs.sort_by(|a, b| a.artist.cmp(&b.artist));
     if !albumless_songs.is_empty() {
         for (artist, artist_songs) in &albumless_songs.into_iter().chunk_by(|s| s.artist.clone()) {
+            let mut artist_songs: Vec<_> = artist_songs.into_iter().collect();
+            artist_songs.sort_by(|a, b| a.title.cmp(&b.title));
             albums.push(Album {
                 metadata: AlbumMetadata {
                     id: -1,
